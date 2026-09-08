@@ -1,4 +1,50 @@
-<config-dsl version="3" target-version="2.0.0-dev4">
+<config-dsl version="4" target-version="2.0.0-dev4">
+	<ui title="配置文件生成器" brand="TUIC" mark="T" eyebrow="TUIC 2.0.0-dev4 · QUINN"
+		description="填写连接信息，生成相互匹配的服务端与客户端配置。"
+		reference="https://docs.ihsin.dev/tuic/tools/config-generator-reference/" mode-field="mode" format-field="format"
+		export-hint="复制和下载始终包含真实密码。配对模式请分别保存两份配置。">
+		<section name="addresses" label="连接信息"/>
+		<section name="authentication" label="用户认证"/>
+		<section name="tls" label="TLS 与证书">
+			<notice when="acme" text="域名需指向服务器，ACME HTTP-01 验证使用 TCP 80；同时开放 TUIC 的 UDP 监听端口。"/>
+			<notice when="serverSelf" text="自签名仅用于受控测试。配对测试需明确跳过证书校验。"/>
+		</section>
+		<section name="local" label="本地代理" when="client"/>
+		<section name="transport" label="高级选项" detail="日志 · 重连 · 端口转发" collapsed="true">
+			<notice text="客户端 UDP 模式、自定义信任证书和拥塞控制暂未接入运行逻辑，本生成器不输出这些选项。"/>
+		</section>
+		<notice when="insecureClient" text="当前客户端配置跳过证书校验，仅适合受控测试。"/>
+		<notice when="exposedLocal" text="SOCKS5 正在监听非回环地址且未启用认证，请确认访问范围。"/>
+		<notice when="zeroRtt" text="0-RTT 早期数据可能被重放。"/>
+		<notice text="此处仅检查配置字段。证书文件、DNS、防火墙和实际连接需要在部署环境验证。"/>
+	</ui>
+	<validators>
+		<validator name="required" kind="required" message="请填写此项。"/>
+		<validator name="host" kind="host" message="请输入可连接的域名或 IP，不含端口、路径或通配监听地址。"/>
+		<validator name="port" kind="integer" min="1" max="65535" message="端口必须是 1–65535 的整数。"/>
+		<validator name="socket" kind="socket" message="请输入有效的 IP:端口；IPv6 使用方括号。"/>
+		<validator name="email" kind="email" message="请填写有效的邮箱地址。"/>
+		<validator name="socks-credential" kind="length" nonblank="true" min="1" max="255" message="SOCKS5 认证字段必须为 1–255 字节。"/>
+		<validator name="milliseconds" kind="integer" min="1" max="9007199254740991" message="请输入大于 0 的安全整数（毫秒）。"/>
+		<validator name="seconds" kind="integer" min="1" max="9007199254740991" message="请输入大于 0 的安全整数（秒）。"/>
+		<validator name="endpoint" kind="endpoint" message="目标必须是域名或 IP 加端口。"/>
+		<validator name="password" kind="length" min="1" message="请输入密码，或点击生成凭据。"/>
+		<validator name="uuid" kind="uuid" transform="trim lowercase" message="请输入非全零的标准 UUID，或点击生成凭据。"/>
+		<validator name="domain" kind="domain" message="请填写有效的 DNS 域名。"/>
+		<validator name="publicDomain" kind="public-domain" message="请填写公开域名。"/>
+		<validator name="loopback" kind="loopback-socket" message="请使用回环监听地址。"/>
+	</validators>
+	<effects><reset on="tlsMode" target="insecure"/></effects>
+	<rules>
+		<assert key="sni" when="client" message="请填写证书对应的 DNS 域名作为 SNI。"><valid ref="clientSni" rule="domain"/></assert>
+		<assert key="hostname" when="server" message="请填写有效的证书域名。"><valid ref="serverHostname" rule="domain"/></assert>
+		<assert key="hostname" when="acme" message="ACME 需要公开域名。"><valid ref="serverHostname" rule="publicDomain"/></assert>
+		<assert key="insecure" when="pairedSelf" message="自签名测试需要明确开启跳过证书校验，或改用受信任证书。"><truthy from="/insecure"/></assert>
+		<assert key="maxBackoff" when="validBackoff" message="最大等待不能小于首次等待。"><compare op="gte"><source from="/maxBackoff" transform="integer"/><source from="/initialBackoff" transform="integer"/></compare></assert>
+		<unique collection="users" key="uuid" message="UUID 重复，请为每个用户使用不同 UUID。"><source from="uuid" transform="trim lowercase"/></unique>
+		<unique collection="forwards" key="listen" when="validBinding" message="同一协议的监听地址重复。"><source from="protocol"/><source from="listen" transform="socket"/></unique>
+		<assert collection="forwards" key="listen" when="validPorts" message="请使用与 SOCKS5 不同的监听端口。"><compare op="ne"><source from="listen" transform="port"/><source from="/local" transform="port"/></compare></assert>
+	</rules>
 	<inputs>
 		<field name="mode" type="enum" default="pair" section="mode" label="生成模式">
 			<option value="pair" label="配对生成" />
@@ -49,11 +95,11 @@
 		<field name="initialBackoff" type="string" default="500" section="transport" label="首次重连等待（毫秒）" placeholder="500" hint="首次重连前等待的时间。" widget="number" when="reconnect" rule="milliseconds" />
 		<field name="maxBackoff" type="string" default="30000" section="transport" label="最大重连等待（毫秒）" placeholder="30000" hint="应大于或等于首次等待时间。" widget="number" when="reconnect" rule="milliseconds" />
 		<field name="activeUser" type="integer" default="0" section="internal" label="客户端使用的用户" />
-		<collection name="users" initial-items="1">
-			<field name="uuid" type="string" default="" label="UUID" rule="uuid" />
-			<field name="password" type="string" default="" label="密码" widget="password" rule="password" />
+		<collection name="users" initial-items="1" min-items="1" label="用户" section="authentication" add-label="＋ 添加用户" generate-label="生成凭据" hint="配对配置自动使用相同的 UUID 和密码。" selected-by="activeUser" all-when="server" select-when="client">
+			<field name="uuid" type="string" default="" label="UUID" rule="uuid" generator="uuid-v4" />
+			<field name="password" type="string" default="" label="密码" widget="password" rule="password" generator="hex" bytes="24" />
 		</collection>
-		<collection name="forwards" initial-items="0" when="client">
+		<collection name="forwards" initial-items="0" when="client" label="转发" section="transport" add-label="＋ 添加转发" hint="服务端默认拦截回环和私有目标地址。">
 			<field name="protocol" type="enum" default="tcp" label="转发协议">
 				<option value="tcp" label="TCP" />
 				<option value="udp" label="UDP" />
@@ -74,6 +120,13 @@
 		<condition name="zeroRtt"><truthy from="/zeroRtt"/></condition>
 		<condition name="udp"><eq from="protocol" value="udp"/></condition>
 		<condition name="ip"><ip ref="host"/></condition>
+		<condition name="serverSelf"><all><use ref="server"/><use ref="self"/></all></condition>
+		<condition name="pairedSelf"><all><use ref="serverSelf"/><use ref="client"/></all></condition>
+		<condition name="insecureClient"><all><use ref="client"/><truthy from="/insecure"/></all></condition>
+		<condition name="exposedLocal"><all><use ref="client"/><not><truthy from="/localAuth"/></not><valid from="/local" rule="socket"/><not><valid from="/local" rule="loopback"/></not></all></condition>
+		<condition name="validBackoff"><all><use ref="reconnect"/><valid from="/initialBackoff" rule="milliseconds"/><valid from="/maxBackoff" rule="milliseconds"/></all></condition>
+		<condition name="validBinding"><valid from="listen" rule="socket"/></condition>
+		<condition name="validPorts"><all><use ref="validBinding"/><valid from="/local" rule="socket"/></all></condition>
 	</conditions>
 	<values>
 		<value name="host"><source from="/host" transform="trim unbracket"/></value>
@@ -82,7 +135,7 @@
 	</values>
 	<!-- TUIC 4719113 / Wind 9025349: literal output names, no executable code. -->
 	<outputs>
-		<object name="server" when="server">
+		<object name="server" when="server" label="服务端" filename="server" command="tuic-server -c {filename}">
 			<string name="server" from="/listen" transform="trim"/>
 			<enum name="log_level" from="/logLevel" options="logLevel"/>
 			<boolean name="zero_rtt_handshake" value="true" when="zeroRtt"/>
@@ -106,7 +159,7 @@
 				</object></object>
 			</object>
 		</object>
-		<object name="client" when="client">
+		<object name="client" when="client" label="客户端" filename="client" command="tuic-client -c {filename}">
 			<string name="server"><endpoint><source ref="host"/><source from="/port" transform="integer"/></endpoint></string>
 			<!-- Explicit IP also avoids the baseline client's IPv6 DNS formatting issue. -->
 			<string name="ip" ref="host" when="ip"/>

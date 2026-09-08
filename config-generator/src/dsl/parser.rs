@@ -7,15 +7,28 @@ pub(super) fn parse(source: &str) -> Result<Document, DslError> {
 		return Err(root.error("根元素必须为 config-dsl"));
 	}
 	attrs(&root, &["version", "target-version"])?;
-	if root.required("version")? != "3" {
-		return Err(root.error("仅支持 DSL version=3"));
+	if root.required("version")? != "4" {
+		return Err(root.error("仅支持 DSL version=4"));
 	}
 	let mut sections = BTreeMap::new();
 	for child in &root.children {
-		if !["inputs", "conditions", "values", "outputs"].contains(&child.tag.as_str()) {
+		if ![
+			"inputs",
+			"conditions",
+			"values",
+			"outputs",
+			"ui",
+			"validators",
+			"rules",
+			"effects",
+		]
+		.contains(&child.tag.as_str())
+		{
 			return Err(child.error("未知文档区块"));
 		}
-		attrs(child, &[])?;
+		if child.tag != "ui" {
+			attrs(child, &[])?;
+		}
 		if sections.insert(child.tag.as_str(), child).is_some() {
 			return Err(child.error("重复文档区块"));
 		}
@@ -33,7 +46,23 @@ pub(super) fn parse(source: &str) -> Result<Document, DslError> {
 		match node.tag.as_str() {
 			"field" => fields.push(field(node)?),
 			"collection" => {
-				attrs(node, &["name", "initial-items", "when"])?;
+				attrs(
+					node,
+					&[
+						"name",
+						"initial-items",
+						"when",
+						"label",
+						"section",
+						"hint",
+						"add-label",
+						"generate-label",
+						"min-items",
+						"selected-by",
+						"all-when",
+						"select-when",
+					],
+				)?;
 				let initial_items = node
 					.required("initial-items")?
 					.parse::<usize>()
@@ -54,6 +83,15 @@ pub(super) fn parse(source: &str) -> Result<Document, DslError> {
 				}
 				collections.push(Collection {
 					name: name.into(),
+					label: node.attr("label").unwrap_or(name).into(),
+					section: node.attr("section").unwrap_or_default().into(),
+					hint: node.attr("hint").unwrap_or_default().into(),
+					add_label: node.attr("add-label").unwrap_or("添加").into(),
+					generate_label: node.attr("generate-label").unwrap_or("生成随机值").into(),
+					min_items: metadata::bounded(node, "min-items", 0, 1000)?,
+					selected_by: node.attr("selected-by").map(str::to_owned),
+					all_when: node.attr("all-when").map(str::to_owned),
+					select_when: node.attr("select-when").map(str::to_owned),
 					fields: items,
 					initial_items,
 					when: node.attr("when").map(str::to_owned),
@@ -85,14 +123,20 @@ pub(super) fn parse(source: &str) -> Result<Document, DslError> {
 		}
 	}
 	output(outputs, false)?;
-	let doc = Document {
+	let mut doc = Document {
 		target_version: root.required("target-version")?.into(),
+		ui: metadata::parse_ui(sections.get("ui").copied())?,
+		exports: metadata::exports(outputs)?,
+		validators: metadata::validators(sections.get("validators").copied())?,
+		rules: metadata::rules(sections.get("rules").copied())?,
+		resets: metadata::resets(sections.get("effects").copied())?,
 		fields,
 		collections,
 		conditions,
 		values,
 		outputs: (*outputs).clone(),
 	};
+	metadata::check(&mut doc).map_err(|error| root.error(&error.0))?;
 	check_references(&root, &doc)?;
 	let mut done = BTreeSet::new();
 	for (prefix, defs) in [("condition", &doc.conditions), ("value", &doc.values)] {
@@ -102,7 +146,7 @@ pub(super) fn parse(source: &str) -> Result<Document, DslError> {
 	}
 	Ok(doc)
 }
-fn attrs(node: &Element, allowed: &[&str]) -> Result<(), DslError> {
+pub(super) fn attrs(node: &Element, allowed: &[&str]) -> Result<(), DslError> {
 	if node.attrs.keys().any(|k| !allowed.contains(&k.as_str())) {
 		return Err(node.error("含有未知属性"));
 	}
@@ -118,7 +162,7 @@ fn attrs(node: &Element, allowed: &[&str]) -> Result<(), DslError> {
 			&& (value.is_empty()
 				|| value
 					.split_whitespace()
-					.any(|s| !["trim", "lowercase", "unbracket", "integer"].contains(&s)))
+					.any(|s| !["trim", "lowercase", "unbracket", "integer", "socket", "port"].contains(&s)))
 		{
 			return Err(node.error("未知转换，不能使用脚本表达式"));
 		}
@@ -170,6 +214,8 @@ fn field(node: &Element) -> Result<InputField, DslError> {
 			"widget",
 			"when",
 			"rule",
+			"generator",
+			"bytes",
 		],
 	)?;
 	let key = identifier(node, "name")?.into();
@@ -226,24 +272,6 @@ fn field(node: &Element) -> Result<InputField, DslError> {
 		};
 	}
 	let rule = node.attr("rule").unwrap_or_default();
-	if ![
-		"",
-		"required",
-		"host",
-		"port",
-		"socket",
-		"email",
-		"socks-credential",
-		"milliseconds",
-		"uuid",
-		"password",
-		"endpoint",
-		"seconds",
-	]
-	.contains(&rule)
-	{
-		return Err(node.error("未知输入校验规则"));
-	}
 	Ok(InputField {
 		key,
 		label: node.required("label")?.into(),
@@ -253,11 +281,12 @@ fn field(node: &Element) -> Result<InputField, DslError> {
 		kind,
 		options,
 		rule: rule.into(),
+		generator: metadata::generator(node)?,
 		default,
 		when: node.attr("when").map(str::to_owned),
 	})
 }
-fn condition(node: &Element) -> Result<(), DslError> {
+pub(super) fn condition(node: &Element) -> Result<(), DslError> {
 	match node.tag.as_str() {
 		"all" | "any" | "not" => {
 			attrs(node, &[])?;
@@ -275,6 +304,21 @@ fn condition(node: &Element) -> Result<(), DslError> {
 			attrs(node, &["ref"])?;
 			identifier(node, "ref")?;
 			empty(node)?;
+		}
+		"valid" => {
+			attrs(node, &["from", "ref", "rule"])?;
+			source(node)?;
+			node.required("rule")?;
+			empty(node)?;
+		}
+		"compare" => {
+			attrs(node, &["op"])?;
+			if !["ne", "gte"].contains(&node.required("op")?) || node.children.len() != 2 {
+				return Err(node.error("比较需要两个值及有效操作"));
+			}
+			for child in &node.children {
+				expression(child)?;
+			}
 		}
 		"eq" | "truthy" | "ip" => {
 			attrs(
@@ -295,7 +339,7 @@ fn condition(node: &Element) -> Result<(), DslError> {
 	}
 	Ok(())
 }
-fn expression(node: &Element) -> Result<(), DslError> {
+pub(super) fn expression(node: &Element) -> Result<(), DslError> {
 	match node.tag.as_str() {
 		"source" => {
 			attrs(node, &["from", "ref", "transform", "when"])?;
@@ -334,7 +378,7 @@ fn output(node: &Element, named: bool) -> Result<(), DslError> {
 				if node.tag == "outputs" {
 					&[]
 				} else {
-					&["name", "when", "secret"]
+					&["name", "when", "secret", "label", "filename", "command"]
 				},
 			)?;
 			let mut names = BTreeSet::new();
@@ -419,6 +463,19 @@ fn references(node: &Element, result: &mut BTreeSet<String>) {
 	}
 }
 fn check_references(node: &Element, doc: &Document) -> Result<(), DslError> {
+	for attr in ["all-when", "select-when"] {
+		if let Some(name) = node.attr(attr)
+			&& !doc.conditions.contains_key(name)
+		{
+			return Err(node.error("引用了未声明的条件"));
+		}
+	}
+	if let Some(name) = node.attr("rule")
+		&& !name.is_empty()
+		&& !doc.validators.contains_key(name)
+	{
+		return Err(node.error("未声明的校验规则"));
+	}
 	if let Some(name) = node.attr("when")
 		&& !doc.conditions.contains_key(name)
 	{
@@ -436,6 +493,9 @@ fn check_references(node: &Element, doc: &Document) -> Result<(), DslError> {
 		return Err(node.error("options 必须引用输入枚举"));
 	}
 	for attr in ["from", "index", "key", "where-field"] {
+		if attr == "key" && ["assert", "unique"].contains(&node.tag.as_str()) {
+			continue;
+		}
 		if let Some(path) = node.attr(attr) {
 			let segments: Vec<_> = path.strip_prefix('/').unwrap_or(path).split('/').collect();
 			if segments.len() != 1

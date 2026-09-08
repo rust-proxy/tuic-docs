@@ -1,14 +1,16 @@
 //! Static XML configuration descriptions, deserialized with Serde. No callbacks or scripts.
+mod metadata;
 mod parser;
+mod rules;
 mod wire;
 mod xml;
-
 use std::{
 	collections::{BTreeMap, BTreeSet},
 	fmt,
 	net::IpAddr,
 };
 
+pub use metadata::{Export, Generator, Notice, Section, Ui};
 use serde_json::{Map, Value};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,6 +67,7 @@ pub struct InputField {
 	pub kind: InputKind,
 	pub options: Vec<(String, String)>,
 	pub rule: String,
+	pub generator: Option<Generator>,
 	default: Value,
 	when: Option<String>,
 }
@@ -102,6 +105,15 @@ impl InputField {
 pub struct Collection {
 	pub name: String,
 	pub fields: Vec<InputField>,
+	pub label: String,
+	pub section: String,
+	pub hint: String,
+	pub add_label: String,
+	pub generate_label: String,
+	pub min_items: usize,
+	pub selected_by: Option<String>,
+	pub all_when: Option<String>,
+	pub select_when: Option<String>,
 	initial_items: usize,
 	when: Option<String>,
 }
@@ -117,6 +129,11 @@ impl Collection {
 #[derive(Debug, Clone)]
 pub struct Document {
 	pub target_version: String,
+	pub ui: Ui,
+	pub exports: Vec<Export>,
+	validators: BTreeMap<String, Element>,
+	rules: Vec<Element>,
+	resets: Vec<(String, String)>,
 	pub fields: Vec<InputField>,
 	pub collections: Vec<Collection>,
 	conditions: BTreeMap<String, Element>,
@@ -178,6 +195,16 @@ impl Document {
 			}
 			"not" => Ok(!self.test(node.single()?, root, row)?),
 			"use" => self.condition(node.required("ref")?, root, row),
+			"valid" => self.check_validator(node.required("rule")?, &self.source(node, root, row)?),
+			"compare" => {
+				let left = self.eval(&node.children[0], root, row)?;
+				let right = self.eval(&node.children[1], root, row)?;
+				match node.required("op")? {
+					"ne" => Ok(left != right),
+					"gte" => Ok(left.as_u64().zip(right.as_u64()).is_some_and(|(a, b)| a >= b)),
+					_ => Err(node.error("未知比较操作")),
+				}
+			}
 			"eq" => {
 				let value = self.source(node, root, row)?;
 				if !matches!(value, Value::String(_) | Value::Bool(_) | Value::Number(_)) {
@@ -445,6 +472,14 @@ fn transform(node: &Element, mut value: Value, transforms: Option<&str>) -> Resu
 				.and_then(|v| v.strip_suffix(']'))
 				.unwrap_or(text)
 				.into(),
+			"socket" => crate::validation::endpoint(text, true)
+				.map(|(host, port)| {
+					format!("{}:{port}", host.parse::<IpAddr>().map(|ip| ip.to_string()).unwrap_or(host)).into()
+				})
+				.ok_or_else(|| node.error("端点转换失败"))?,
+			"port" => crate::validation::endpoint(text, true)
+				.map(|(_, port)| Value::from(port))
+				.ok_or_else(|| node.error("端点转换失败"))?,
 			"integer" => {
 				if text.is_empty() || !text.bytes().all(|b| b.is_ascii_digit()) {
 					return Err(node.error("整数转换失败"));

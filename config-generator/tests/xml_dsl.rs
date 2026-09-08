@@ -1,12 +1,9 @@
-use serde_json::{Value, json};
-use tuic_config_generator::{
-	dsl::Document,
-	schema::{self, State},
-};
+use config_generator::{dsl::Document, schema::State};
+use serde_json::json;
 type Result = std::result::Result<(), Box<dyn std::error::Error>>;
 fn description(inputs: &str, definitions: &str, outputs: &str) -> String {
 	format!(
-		r#"<config-dsl version="3" target-version="test"><inputs>{inputs}</inputs>{definitions}<outputs>{outputs}</outputs></config-dsl>"#
+		r#"<config-dsl version="4" target-version="test"><inputs>{inputs}</inputs>{definitions}<outputs>{outputs}</outputs></config-dsl>"#
 	)
 }
 
@@ -120,12 +117,12 @@ fn named_values_conditions_and_ipv6_endpoint() -> Result {
 fn syntax_and_semantic_errors_are_rejected() {
 	for invalid in [
 		"<config-dsl>",
-		"<config-dsl version='3' target-version='test'><inputs></outputs></config-dsl>",
+		"<config-dsl version='4' target-version='test'><inputs></outputs></config-dsl>",
 		"<!DOCTYPE x SYSTEM 'file:///never-read'><config-dsl/>",
 		"<?xml version='1.0'?><config-dsl/>",
-		"<config-dsl version='3' version='3'/>",
+		"<config-dsl version='4' version='4'/>",
 		"<!-- invalid -- comment --><config-dsl/>",
-		"<config-dsl version='3' target-version='test'>text<inputs/><outputs/></config-dsl>",
+		"<config-dsl version='4' target-version='test'>text<inputs/><outputs/></config-dsl>",
 	] {
 		assert!(Document::parse(invalid).is_err());
 	}
@@ -179,7 +176,7 @@ fn reject_cycles_including_cross_kind_and_unused_definitions() {
 
 #[test]
 fn diagnostics_have_location_and_never_include_field_values() -> Result {
-	let bad = "<config-dsl version='3' target-version='test'>\n<inputs/>\n<outputs><string name='token' value='never-log-this' unknown='true'/></outputs></config-dsl>";
+	let bad = "<config-dsl version='4' target-version='test'>\n<inputs/>\n<outputs><string name='token' value='never-log-this' unknown='true'/></outputs></config-dsl>";
 	let error = Document::parse(bad).err().ok_or("expected error")?.to_string();
 	assert!(error.contains("3:") && !error.contains("never-log-this"));
 	let source = description(
@@ -200,39 +197,33 @@ fn diagnostics_have_location_and_never_include_field_values() -> Result {
 
 #[test]
 fn extending_static_xml_changes_defaults_forms_and_projection_without_rust_code() -> Result {
-	let xml = schema::SOURCE
+	let xml = include_str!("../schema/example.xml")
 		.replace(
 			"</inputs>",
-			r#"<field name="note" type="string" default="new default" section="addresses" label="备注"/></inputs>"#,
+			r#"<field name="note" type="string" default="new default" section="general" label="备注"/></inputs>"#,
 		)
 		.replace("<outputs>", r#"<outputs><string name="note" from="/note"/>"#);
 	let doc = Document::parse(&xml)?;
-	let mut state: State = serde_json::from_value(doc.defaults())?;
+	let mut state = State::new(&doc);
 	let field = doc.fields.iter().find(|f| f.key == "note").ok_or("field missing")?;
-	assert_eq!(field.read(&state), "new default");
-	assert!(field.write(&mut state, "updated via metadata"));
-	state.mode = "server".into();
-	state.users.clear();
-	assert_eq!(doc.project(&state.value())?["note"], "updated via metadata");
+	assert_eq!(field.read_value(&state.data), "new default");
+	assert!(doc.write_field(&mut state.data, "note", "updated via metadata"));
+	assert_eq!(doc.project(&state.data)?["note"], "updated via metadata");
 	Ok(())
 }
 
 #[test]
 fn form_binding_preserves_stable_row_ids() -> Result {
-	let mut state = State::initial()?;
-	state.users[0].id = 42;
-	state.forwards.push(schema::Forward {
-		id: 73,
-		..schema::Forward::initial()?
-	});
-	for field in schema::input_fields() {
-		assert!(field.write(&mut state, &field.read(&State::initial()?)));
+	let doc = Document::parse(include_str!("../schema/example.xml"))?;
+	let mut state = State::new(&doc);
+	let id = state.add(&doc, "entries")?;
+	let ids = state.rows("entries");
+	for field in &doc.fields {
+		assert!(doc.write_field(&mut state.data, &field.key, &field.read_value(&doc.defaults())));
 	}
-	assert_eq!(state.users[0].id, 42);
-	assert_eq!(state.forwards[0].id, 73);
-	assert!(state.extra.is_empty());
-	let data: Value = state.value();
-	assert_eq!(data["users"][0]["id"], 42);
+	assert_eq!(state.rows("entries"), ids);
+	assert_eq!(state.row("entries", id).map(|row| row["id"].clone()), Some(json!("item")));
+	assert!(state.data.get("_id").is_none());
 	Ok(())
 }
 

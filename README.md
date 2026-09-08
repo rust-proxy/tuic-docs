@@ -23,6 +23,8 @@ trunk --config config-generator/Trunk.toml serve
 trunk --config config-generator/Trunk.toml build --release
 ```
 
+可通过 `CONFIG_SCHEMA` 指定其他 XML，路径相对 `config-generator/`（或绝对路径）；默认 `schema/config.xml`。例如 PowerShell 中设置 `$env:CONFIG_SCHEMA = 'schema/example.xml'` 后构建即可生成任务清单工具，完成后用 `Remove-Item Env:CONFIG_SCHEMA` 恢复默认。详见 [DSL v4](docs/tools/config-dsl.md)。
+
 产物在 `config-generator/dist/`。将整个目录交给静态服务器即可，默认使用相对资源路径，支持根路径或带结尾 `/` 的子路径。服务器需为 `.wasm` 返回 `application/wasm`；不要通过 `file://` 打开文件。若明确部署到固定前缀，可传入 `--public-url /your-prefix/`。
 
 凭据使用浏览器 Crypto API 生成。所有输入、校验和序列化在本地 WASM 中完成；不加载第三方分析脚本，不保存输入、主题或凭据，不向网络提交配置。复制和下载包含明文密码，预览默认隐藏密码。
@@ -45,7 +47,7 @@ uv run --locked zensical serve
 cargo test --workspace --locked
 cargo +nightly fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo clippy --target wasm32-unknown-unknown --bin tuic-config-generator --locked -- -D warnings
+cargo clippy --target wasm32-unknown-unknown --bin config-generator --locked -- -D warnings
 
 # 构建两个独立静态应用并放入 site/，不执行发布
 uv run --locked python scripts/build-site.py
@@ -80,25 +82,33 @@ uv run --locked python tests/config-generator/check-rust.py --offline
 npm ci --prefix tests/config-generator
 node tests/config-generator/browser.mjs
 
+# 测试已构建的独立产物，临时本地服务随测试结束自动关闭
+uv run --locked python tests/config-generator/run-browser.py
+
+# 组合站点构建使用部署前缀
+uv run --locked python tests/config-generator/run-browser.py --directory site/config-generator --prefix /tuic/config-generator/
+
 # 也可以使用 Playwright 自带的 Chromium，与 CI 一致
 npm exec --prefix tests/config-generator -- playwright install chromium
 BROWSER_CHANNEL=chromium node tests/config-generator/browser.mjs
 ```
 
-`PLAYWRIGHT_MODULE_PATH` 可指定已有 Playwright 模块目录；`BROWSER_CHANNEL` 支持 `msedge`、`chrome` 和 `chromium`，CI 默认使用 `chromium`。独立 Trunk 开发服务器使用 `PREVIEW_URL=http://127.0.0.1:8080/`。测试覆盖 WASM 加载、独立页面结构、配对一致性、用户删除、TLS 切换、输入校验、转发编辑、复制下载、转义、移动端、主题、无外部请求和输入不持久化，截图在 `.cache/`。
+`PLAYWRIGHT_MODULE_PATH` 可指定已有 Playwright 模块目录；`BROWSER_CHANNEL` 支持 `msedge`、`chrome` 和 `chromium`，CI 默认使用 `chromium`。独立 Trunk 开发服务器使用 `PREVIEW_URL=http://127.0.0.1:8080/`。测试覆盖 WASM 加载、独立页面结构、配对一致性、用户删除、TLS 切换、输入校验、转发编辑、复制下载、转义、移动端、主题、无外部请求和输入不持久化，截图在 `.cache/`。复用检查可在以 `schema/example.xml` 构建后运行 `uv run --locked python tests/config-generator/run-browser.py --script tests/config-generator/browser-generic.mjs`；CI 将示例构建在独立临时目录，保留默认站点产物用于后续发布。
 
 ## DSL 与维护约定
 
-[Config DSL v3](docs/tools/config-dsl.md) 使用独立的 `config-generator/schema/tuic.xml` 静态描述输入、默认值、枚举、条件、列表、映射及敏感字段，由 quick-xml + Serde 反序列化，不使用 Rust 宏或闭包编写配置描述。Leptos 读取同一份元数据生成表单；通用投影与脱敏在 `dsl.rs`，跨字段 TUIC 校验在 `validation.rs`。新增普通字段时编辑 XML、说明及相关测试。
+[Config DSL v4](docs/tools/config-dsl.md) 使用独立的 `config-generator/schema/config.xml` 静态描述输入、默认值、枚举、条件、列表、映射及敏感字段，由 quick-xml + Serde 反序列化，不使用 Rust 宏或闭包编写配置描述。Leptos 读取同一份元数据生成表单；通用投影与脱敏在 `dsl.rs`，通用校验与联动在 `dsl/rules.rs`，基础地址检查在 `validation.rs`。TUIC 品牌、页面分区、提示、跨字段规则、随机值生成声明、导出命令也全部由 XML 提供。新增目标应用只需更换 XML；`schema/example.xml` 提供无 TUIC 字段的复用示例。
 
 | 路径 | 内容 |
 | --- | --- |
 | `Cargo.toml` / `Cargo.lock` | 生成器 Rust workspace 与锁定依赖 |
 | `config-generator/` | 可独立构建的 Rust + Leptos 单页应用 |
-| `config-generator/schema/tuic.xml` | 静态 XML 配置描述，字段、初值、条件与输出的来源 |
+| `config-generator/schema/config.xml` | 唯一 TUIC 产品定义：界面、字段、规则、提示与输出 |
 | `config-generator/src/dsl/xml.rs` / `dsl/wire.rs` / `dsl/parser.rs` | XML 子集检查、Serde 数据模型与语义校验 |
 | `config-generator/src/dsl.rs` | 数据投影、类型检查与脱敏 |
-| `config-generator/src/schema.rs` | 嵌入 XML、缓存解析结果与表单状态绑定 |
+| `config-generator/src/schema.rs` | 嵌入 XML、缓存解析结果、通用状态与独立行标识 |
+| `config-generator/src/dsl/metadata.rs` / `dsl/rules.rs` | 页面元数据、随机值声明、校验和字段联动 |
+| `config-generator/schema/example.xml` | 无 TUIC 字段的完整应用复用示例 |
 | `config-generator/src/model.rs` | 配置生成入口及三种格式序列化 |
 | `config-generator/tests/` | XML DSL 与配置回归测试 |
 | `zensical.toml` / `docs/` | 中文文档、导航、字段说明和 DSL 文档 |
@@ -113,7 +123,7 @@ BROWSER_CHANNEL=chromium node tests/config-generator/browser.mjs
 [CI and Pages 工作流](.github/workflows/deploy.yml) 在 PR、推送 `main` 及手动触发时运行：
 
 - `check`：nightly rustfmt、stable 原生与 WASM Clippy、Rust/XML DSL 测试，以及 TOML/JSON/YAML 独立解析往返。Python 固定为 3.13，依赖使用 `uv.lock`。
-- `build`：使用 Trunk 0.21.14 构建文档和独立 SPA，检查站点链接及资源，再通过锁定版本的 Playwright/Chromium 运行生成器浏览器回归。Rust/Trunk、uv 和 npm 使用依赖缓存。
+- `build`：使用 Trunk 0.21.14 构建文档和独立 SPA，检查站点链接及资源，再通过锁定版本的 Playwright/Chromium 运行 TUIC 及无 TUIC 字段的 XML 复用浏览器回归。Rust/Trunk、uv 和 npm 使用依赖缓存。
 - `deploy`：依赖 `check` 和 `build` 成功，仅在 `main` 的推送或手动运行时发布；Pages 写权限和 OIDC 权限仅授予此作业，PR 只验证和构建。
 
 发布产物在临时目录组装，文档位于 `/tuic/`，独立生成器位于 `/tuic/config-generator/`，根目录保留 `CNAME`。Pages 来源应设为 GitHub Actions。真实 TUIC 解析与回环测试仍按上文在具备相邻仓库的环境中运行。

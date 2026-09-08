@@ -3,11 +3,11 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="在浏览器本地生成 TUIC 服务端与客户端配置。">
+    <meta name="description" content="在浏览器本地生成配置文件。">
     <meta name="referrer" content="no-referrer">
-    <title>TUIC 配置生成器</title>
+    <title>配置生成器</title>
     <link data-trunk rel="css" href="styles.css">
-    <link data-trunk rel="rust" data-bin="tuic-config-generator" data-wasm-opt="s" data-wasm-opt-params="--enable-bulk-memory --enable-reference-types">
+    <link data-trunk rel="rust" data-bin="config-generator" data-wasm-opt="s" data-wasm-opt-params="--enable-bulk-memory --enable-reference-types">
   </head>
   <body>
     <p id="cg-loading" role="status">正在加载本地配置生成器，需要支持 WebAssembly 的现代浏览器。</p>

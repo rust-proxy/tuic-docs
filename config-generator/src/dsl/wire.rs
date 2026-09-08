@@ -1,5 +1,5 @@
 //! Serde wire model. Attributes remain lexical strings until semantic validation:
-//! this preserves v3's strict booleans, numeric rules, and empty values.
+//! this preserves the DSL's strict booleans, numeric rules, and empty values.
 use std::{collections::BTreeMap, fmt};
 
 use serde::{
@@ -13,6 +13,19 @@ use super::{DslError, Element};
 #[serde(rename_all = "kebab-case")]
 enum Node {
 	ConfigDsl(Body),
+	Ui(Body),
+	Section(Body),
+	Notice(Body),
+	Validators(Body),
+	Validator(Body),
+	Rules(Body),
+	Assert(Body),
+	Unique(Body),
+	Valid(Body),
+	Compare(Body),
+	Effects(Body),
+	Reset(Body),
+
 	Inputs(Body),
 	Conditions(Body),
 	Values(Body),
@@ -87,6 +100,18 @@ impl<'de> Deserialize<'de> for Body {
 impl Node {
 	fn into_element(self, positions: &mut impl Iterator<Item = (usize, usize)>) -> Result<Element, DslError> {
 		let (tag, body) = match self {
+			Self::Ui(body) => ("ui", body),
+			Self::Section(body) => ("section", body),
+			Self::Notice(body) => ("notice", body),
+			Self::Validators(body) => ("validators", body),
+			Self::Validator(body) => ("validator", body),
+			Self::Rules(body) => ("rules", body),
+			Self::Assert(body) => ("assert", body),
+			Self::Unique(body) => ("unique", body),
+			Self::Valid(body) => ("valid", body),
+			Self::Compare(body) => ("compare", body),
+			Self::Effects(body) => ("effects", body),
+			Self::Reset(body) => ("reset", body),
 			Self::ConfigDsl(body) => ("config-dsl", body),
 			Self::Inputs(body) => ("inputs", body),
 			Self::Conditions(body) => ("conditions", body),

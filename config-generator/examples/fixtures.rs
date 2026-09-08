@@ -2,10 +2,9 @@
 use std::{error::Error, fs, path::PathBuf};
 
 use serde_json::json;
-use tuic_config_generator::{
-	model::{build_configs, serialize},
-	schema::{Forward, State, User, options},
-};
+#[path = "../tests/support/mod.rs"]
+mod support;
+use support::*;
 
 fn user(id: u64) -> User {
 	User {

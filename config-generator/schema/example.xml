@@ -1,0 +1,51 @@
+<config-dsl version="4" target-version="example-1">
+	<ui title="任务清单生成器" brand="Notebook" mark="N" eyebrow="XML 复用示例" description="同一生成器读取另一份 XML。" mode-field="deployment" format-field="encoding" export-hint="保存所需的清单。">
+		<section name="general" label="清单设置"/>
+		<section name="entries" label="清单项目"/>
+		<notice when="confirmed" text="已确认本次清单。"/>
+	</ui>
+	<validators>
+		<validator name="text" kind="required" message="请填写名称。"/>
+		<validator name="count" kind="integer" min="1" max="100" message="数量必须在 1–100 之间。"/>
+	</validators>
+	<inputs>
+		<field name="deployment" type="enum" default="all" label="导出范围">
+			<option value="all" label="全部清单"/><option value="one" label="单个项目"/>
+		</field>
+		<field name="encoding" type="enum" default="json" label="输出格式">
+			<option value="json" label="JSON"/><option value="toml" label="TOML"/><option value="yaml" label="YAML"/>
+		</field>
+		<field name="project" type="string" default="example" section="general" label="项目名称" rule="text"/>
+		<field name="confirm" type="boolean" default="false" section="general" label="确认清单"/>
+		<field name="seed" type="string" default="" section="general" label="随机标记" generator="hex" bytes="8"/>
+		<field name="first" type="string" default="1" section="general" label="起始数量" rule="count"/>
+		<field name="last" type="string" default="10" section="general" label="结束数量" rule="count"/>
+		<field name="chosen" type="integer" default="0" label="选中项目"/>
+		<collection name="entries" label="项目" section="entries" initial-items="1" min-items="1" selected-by="chosen" all-when="all" add-label="添加项目" generate-label="更新标记">
+			<field name="id" type="string" default="item" label="项目名称" rule="text"/>
+			<field name="enabled" type="boolean" default="true" label="启用"/>
+			<field name="tag" type="string" default="" label="标记" generator="uuid-v4"/>
+			<field name="token" type="string" default="" label="密钥" widget="password" generator="hex" bytes="12"/>
+		</collection>
+	</inputs>
+	<conditions>
+		<condition name="all"><eq from="/deployment" value="all"/></condition>
+		<condition name="confirmed"><truthy from="/confirm"/></condition>
+		<condition name="range"><all><valid from="/first" rule="count"/><valid from="/last" rule="count"/></all></condition>
+	</conditions>
+	<effects><reset on="project" target="confirm"/><reset on="seed" target="confirm"/></effects>
+	<rules>
+		<assert key="last" when="range" message="结束数量不能小于起始数量。"><compare op="gte"><source from="/last" transform="integer"/><source from="/first" transform="integer"/></compare></assert>
+		<unique collection="entries" key="id" message="项目名称重复。"><source from="id" transform="trim lowercase"/></unique>
+	</rules>
+	<outputs>
+		<object name="snapshot" label="完整清单" filename="snapshot" command="notebook --input {filename}" when="all">
+			<string name="title" from="/project"/>
+			<list name="items" from="/entries"><object><string name="name" from="id"/><boolean name="enabled" from="enabled"/><string name="secret" from="token" secret="true"/></object></list>
+		</object>
+		<object name="selected" label="单项清单" filename="selected">
+			<string name="item"><select from="/entries" index="/chosen"><source from="id"/></select></string>
+		</object>
+		<object name="audit" label="审计信息" filename="audit" when="confirmed"><boolean name="confirmed" from="/confirm"/></object>
+	</outputs>
+</config-dsl>

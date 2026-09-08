@@ -1,9 +1,6 @@
 use serde_json::json;
-use tuic_config_generator::{
-	model::{build_configs, redact_configs, serialize},
-	schema::{Forward, State, User, input_fields, options},
-	validation::{endpoint, validate},
-};
+mod support;
+use support::*;
 
 fn user(id: u64) -> User {
 	User {

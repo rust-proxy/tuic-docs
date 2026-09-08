@@ -1,22 +1,12 @@
 use serde_json::Value;
 
-use crate::{
-	schema::{State, document},
-	validation,
-};
+use crate::dsl::Document;
 
-pub fn build_configs(state: &State) -> Result<Value, String> {
-	let schema = document().map_err(|e| e.to_string())?;
-	if !validation::validate(state).is_empty() {
+pub fn build_configs(schema: &Document, state: &Value) -> Result<Value, String> {
+	if !schema.validate(state).is_empty() {
 		return Err("配置尚未通过校验。".into());
 	}
-	schema.project(&state.value()).map_err(|e| e.to_string())
-}
-pub fn redact_configs(config: &Value) -> Result<Value, String> {
-	document()
-		.map_err(|e| e.to_string())?
-		.redact(config)
-		.map_err(|e| e.to_string())
+	schema.project(state).map_err(|e| e.to_string())
 }
 
 fn escape_separators(value: String) -> String {

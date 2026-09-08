@@ -1,4 +1,4 @@
-//! Check the v3 XML subset before recursive Serde deserialization.
+//! Check the XML subset before recursive Serde deserialization.
 //! This pass records locations and bounds nesting, but does not build the AST.
 use quick_xml::{Reader, events::Event};
 
@@ -90,7 +90,7 @@ fn xml_char(c: char) -> bool {
 	matches!(c as u32, 0x9 | 0xa | 0xd | 0x20..=0xd7ff | 0xe000..=0xfffd | 0x10000..=0x10ffff)
 }
 
-// quick-xml accepts adjacent quoted attributes; v3 requires XML whitespace.
+// quick-xml accepts adjacent quoted attributes; the DSL requires XML whitespace.
 // BytesStart excludes the closing > or />, so a final quote needs no separator.
 fn attribute_separators(bytes: &[u8]) -> bool {
 	let mut quote = None;

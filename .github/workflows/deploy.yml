@@ -44,7 +44,7 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Check Leptos WASM code
-        run: cargo clippy --target wasm32-unknown-unknown --bin tuic-config-generator --locked -- -D warnings
+        run: cargo clippy --target wasm32-unknown-unknown --bin config-generator --locked -- -D warnings
 
       - name: Test XML DSL and configuration generation
         run: cargo test --workspace --locked
@@ -110,6 +110,14 @@ jobs:
           curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 1 --retry-max-time 60 \
             http://127.0.0.1:8765/tuic/config-generator/ > /dev/null
           node tests/config-generator/browser.mjs
+
+      - name: Verify application reuse with a different XML description
+        env:
+          CONFIG_SCHEMA: schema/example.xml
+          BROWSER_CHANNEL: chromium
+        run: |
+          trunk --config config-generator/Trunk.toml build --release --dist "$PWD/.cache/generic-site"
+          uv run --locked python tests/config-generator/run-browser.py --directory .cache/generic-site --script tests/config-generator/browser-generic.mjs
 
       - name: Assemble Pages artifact
         run: |
