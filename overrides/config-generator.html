@@ -1,0 +1,18 @@
+{% extends "main.html" %}
+{# Credentials must never share a page with third-party analytics. #}
+{% block analytics %}{% endblock %}
+{% block extrahead %}
+  {{ super() }}
+  <link rel="stylesheet" href="{{ 'assets/config-generator/styles.css' | url }}">
+{% endblock %}
+{% block content %}
+  <div id="config-generator" data-reference="{{ 'tools/config-generator-reference/' | url }}">
+    <h1 id="config-generator-title">配置文件生成器</h1>
+    <p>正在加载本地生成器。需要支持 JavaScript 的现代浏览器。</p>
+    <noscript>请启用 JavaScript，或查看<a href="{{ 'tools/config-generator-reference/' | url }}">配置说明</a>手动编写配置。</noscript>
+  </div>
+{% endblock %}
+{% block scripts %}
+  {{ super() }}
+  <script type="module" src="{{ 'assets/config-generator/app.mjs' | url }}"></script>
+{% endblock %}

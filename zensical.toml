@@ -7,7 +7,14 @@ site_dir = "site"
 repo_url = "https://github.com/Itsusinn/tuic"
 repo_name = "Itsusinn/tuic"
 edit_uri = "https://github.com/rust-proxy/tuic-docs/edit/main/docs/"
-nav = [{ "首页" = "index.md" }]
+nav = [
+  { "首页" = "index.md" },
+  { "工具" = [
+    { "配置生成器" = "tools/config-generator.md" },
+    { "生成器说明" = "tools/config-generator-reference.md" },
+    { "配置描述 DSL" = "tools/config-dsl.md" },
+  ] },
+]
 
 [project.theme]
 custom_dir = "overrides"

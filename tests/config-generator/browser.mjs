@@ -1,0 +1,125 @@
+import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { mkdirSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+const require = createRequire(import.meta.url);
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH ?? 'playwright');
+const base = process.env.PREVIEW_URL ?? 'http://127.0.0.1:8765/tuic/tools/config-generator/';
+const browser = await chromium.launch({ channel: process.env.BROWSER_CHANNEL ?? 'msedge', headless: true });
+const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, permissions: ['clipboard-read', 'clipboard-write'] });
+const page = await context.newPage();
+const errors = [];
+const requests = [];
+const localFailures = [];
+page.on('pageerror', e => errors.push(e.message));
+page.on('request', r => requests.push(r.url()));
+page.on('response', r => { if (r.url().startsWith(new URL(base).origin) && r.status() >= 400) localFailures.push(r.status()); });
+// Tests never send test credentials or page content to external services.
+await page.route('**/*', route => route.request().url().startsWith(new URL(base).origin) ? route.continue() : route.abort());
+const id = key => page.locator(`[id="cg-${key}"]`);
+const preview = page.locator('#cg-preview-code');
+const click = name => page.getByRole('button', { name, exact: true }).click();
+async function jsonOutput(side) {
+  await click(side === 'server' ? '服务端' : '客户端');
+  await id('format').selectOption('json');
+  return JSON.parse(await preview.textContent());
+}
+try {
+  await page.goto(base);
+  await page.waitForSelector('#config-generator[data-ready="true"]');
+  assert.equal(await page.getByRole('button', { name: '下载配置', exact: true }).isDisabled(), true);
+  await id('host').fill('tuic.example.com');
+  assert.equal(await page.getByRole('button', { name: '下载配置', exact: true }).isEnabled(), true);
+  await id('reveal').check();
+  let server = await jsonOutput('server');
+  let client = await jsonOutput('client');
+  assert.equal(server.users[client.uuid], client.password);
+  assert.equal(client.tls.skip_cert_verify, false);
+  await id('reveal').uncheck();
+  assert.equal(JSON.parse(await preview.textContent()).password, '••••••••');
+  await click('复制配置');
+  const copied = JSON.parse(await page.evaluate(() => navigator.clipboard.readText()));
+  assert.equal(copied.password, client.password);
+  const pendingDownload = page.waitForEvent('download');
+  await click('下载配置');
+  const download = await pendingDownload;
+  assert.equal(download.suggestedFilename(), 'client.json');
+  assert.equal(JSON.parse(readFileSync(await download.path(), 'utf8')).password, client.password);
+  console.log('PASS: paired credentials, masked preview, clipboard and download');
+
+  await click('＋ 添加用户');
+  await id('activeUser').selectOption('1');
+  await id('reveal').check();
+  server = await jsonOutput('server'); client = await jsonOutput('client');
+  assert.equal(Object.keys(server.users).length, 2);
+  assert.equal(server.users[client.uuid], client.password);
+  await page.getByRole('button', { name: '移除用户 1', exact: true }).click();
+  assert.equal((await jsonOutput('client')).uuid, client.uuid);
+  console.log('PASS: add, select and remove users without breaking pairing');
+
+  await id('tlsMode').selectOption('self');
+  assert.equal(await page.getByRole('button', { name: '下载配置', exact: true }).isDisabled(), true);
+  await id('insecure').check();
+  assert.equal((await jsonOutput('server')).tls.self_sign, true);
+  assert.equal((await jsonOutput('client')).tls.skip_cert_verify, true);
+  await id('tlsMode').selectOption('acme');
+  await id('email').fill('admin@example.com');
+  server = await jsonOutput('server');
+  assert.equal(server.tls.auto_ssl, true); assert.equal(server.tls.self_sign, undefined);
+  assert.equal(await id('insecure').isChecked(), false);
+  await id('tlsMode').selectOption('certificate');
+  server = await jsonOutput('server'); assert.equal(server.data_dir, undefined); assert.equal(server.tls.auto_ssl, undefined);
+  console.log('PASS: certificate modes omit stale fields and reset insecure flag');
+
+  await id('port').fill('65536');
+  assert.equal(await page.getByRole('button', { name: '下载配置', exact: true }).isDisabled(), true);
+  await id('port').fill('443');
+  await id('host').fill('[2001:db8::1]'); await id('hostname').fill('tuic.example.com');
+  client = await jsonOutput('client');
+  assert.equal(client.server, '[2001:db8::1]:443'); assert.equal(client.ip, '2001:db8::1');
+  await click('仅服务端'); assert.equal(await id('host').count(), 0);
+  await click('仅客户端'); await id('sni').fill('tuic.example.com'); assert.equal(await id('listen').count(), 0);
+  await click('配对生成');
+  console.log('PASS: validation, IPv6 and independent modes');
+
+  await page.locator('summary').click();
+  await id('localAuth').check(); await id('localUsername').fill('tester'); await id('localPassword').fill('a " \\ # 中文');
+  await click('＋ 添加转发');
+  await id('forwards.0.listen').fill('127.0.0.1:8080'); await id('forwards.0.remote').fill('example.com:80');
+  await id('forwards.0.protocol').selectOption('udp');
+  await id('forwards.0.timeout').fill('30');
+  client = await jsonOutput('client'); assert.equal(client.local.udp_forward[0].timeout, '30s');
+  assert.equal(client.local.tcp_forward, undefined);
+  await id('reconnect').uncheck(); client = await jsonOutput('client'); assert.equal(client.reconnect_initial_backoff, undefined);
+  await page.getByRole('button', { name: '移除转发 1', exact: true }).click();
+  await id('localAuth').uncheck();
+  client = await jsonOutput('client'); assert.equal(client.local.password, undefined); assert.equal(client.local.udp_forward, undefined);
+  console.log('PASS: local auth, reconnect, forward editing and removal');
+
+  const injection = '<img src=x onerror=alert(1)> " \\ 中文';
+  await id('users.0.password').fill(injection);
+  await id('format').selectOption('yaml'); assert.ok((await preview.textContent()).includes(injection.slice(0, 27)));
+  await id('format').selectOption('toml'); assert.equal(await page.locator('#config-generator img').count(), 0);
+  await id('reveal').uncheck(); await page.locator('summary').click();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  mkdirSync('.cache', { recursive: true });
+  await page.screenshot({ path: resolve('.cache/config-generator-desktop.png'), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+  await page.screenshot({ path: resolve('.cache/config-generator-mobile.png'), fullPage: true });
+  await page.evaluate(() => document.body.setAttribute('data-md-color-scheme', 'slate'));
+  await page.screenshot({ path: resolve('.cache/config-generator-dark.png'), fullPage: true });
+  const reference = await page.locator('a[href*="config-generator-reference"]').first().getAttribute('href');
+  const refResponse = await page.request.get(new URL(reference, base).href);
+  assert.equal(refResponse.status(), 200);
+  assert.equal(await page.evaluate(() => localStorage.length === 0 || !Object.keys(localStorage).some(k => /generator|password|uuid/.test(k))), true);
+  assert.deepEqual(requests.filter(u => /google-analytics|googletagmanager|gtag/.test(u)), []);
+  assert.deepEqual(localFailures, []); assert.deepEqual(errors, []);
+  await page.reload(); await page.waitForSelector('#config-generator[data-ready="true"]');
+  assert.equal(await id('host').inputValue(), '');
+  console.log('PASS: injection safety, mobile layout, themes, /tuic/ paths, no analytics or stored input');
+} finally {
+  await context.close(); await browser.close();
+}
