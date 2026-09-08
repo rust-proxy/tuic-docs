@@ -29,11 +29,12 @@ jobs:
         enable-cache: true
 
     - run: |
-        uv sync
-        uv run mkdocs build
+        uv sync --locked
+        uv run --locked zensical build --clean
         mv site tuic
         mkdir site
         mv tuic site/
+        cp CNAME site/CNAME
 
     - name: Setup Pages
       uses: actions/configure-pages@v5

@@ -3,36 +3,23 @@ hide:
   - toc
   - navigation
 ---
-# 👋 Welcome to TUIC User Manual
 
-TUIC is a proxy protocol focusing on minimizing the additional handshake latency caused by relaying as much as possible, while keeping the protocol simple and easy to implement.
+# TUIC
 
-## Overview
+通过 QUIC 连接应用与远端网络。
 
-This is a fork of the [original TUIC repo](https://github.com/tuic-protocol/tuic) with significant enhancements and additional features, including a server binary ([tuic-server](https://github.com/Itsusinn/tuic/tree/dev/tuic-server)) and a client binary ([tuic-client](https://github.com/Itsusinn/tuic/tree/dev/tuic-client)).
+TUIC 为 TCP 和 UDP 流量提供代理通道。本手册介绍 **Itsusinn/tuic** 的独立服务端与客户端：在服务器上运行 `tuic-server`，在本机运行 `tuic-client`，再让应用使用本地 SOCKS5 代理。
 
-### [✨ Features](https://github.com/Itsusinn/tuic#readme)
+## TUIC 如何工作
 
-**Protocol:**
+```text
+应用 → 本地 SOCKS5 / 转发端口 → tuic-client
+                                      │
+                                  QUIC / UDP
+                                      │
+                                 tuic-server → 目标服务
+```
 
-- ⚡ 0-RTT TCP/UDP proxying over QUIC
-- 🌐 0-RTT authentication
-- 🔀 Full NAT cone UDP relay (`native` and `quic` modes)
-- 📡 Fully multiplexed connections
-- 🚀 Connection migration support
+应用到客户端是本地连接，客户端到服务端使用 QUIC。即使代理的是 TCP 请求，服务器也需要开放 **UDP** 监听端口。
 
-**Server:**
-
-- 🔒 Automatic TLS certificate provisioning via ACME (including IP certificates)
-- 🔑 Self-signed certificate support with auto hot-reload
-- 📋 Flexible ACL (Access Control List) with configurable outbound rules
-- 🌍 SOCKS5 outbound proxy support
-- 📊 RESTful API with traffic statistics
-- 🛡 Built-in private/loopback address protection
-
-**Client:**
-
-- 🔗 Local SOCKS5 proxy inbound
-- 🔄 TCP/UDP port forwarding
-- 🎛 Congestion control algorithm selection (BBR3, BBR, CUBIC, NewReno)
-- ⚙️ `skip_cert_verify` option for testing environments
+[程序下载](https://github.com/Itsusinn/tuic/releases) · [项目源码](https://github.com/Itsusinn/tuic) · [协议规范](https://github.com/rust-proxy/wind/blob/9025349201ba316015cea1b270e48824a04bcc21/specs/tuic.zh_CN.md)

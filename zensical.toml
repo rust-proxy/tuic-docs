@@ -1,0 +1,72 @@
+[project]
+site_name = "TUIC 用户文档"
+site_description = "TUIC 中文文档。"
+site_url = "https://docs.ihsin.dev/tuic/"
+docs_dir = "docs"
+site_dir = "site"
+repo_url = "https://github.com/Itsusinn/tuic"
+repo_name = "Itsusinn/tuic"
+edit_uri = "https://github.com/rust-proxy/tuic-docs/edit/main/docs/"
+nav = [{ "首页" = "index.md" }]
+
+[project.theme]
+custom_dir = "overrides"
+variant = "modern"
+language = "zh"
+features = [
+  "navigation.tabs",
+  "navigation.sections",
+  "navigation.indexes",
+  "navigation.path",
+  "navigation.top",
+  "navigation.footer",
+  "search.highlight",
+  "content.action.edit",
+  "content.code.copy",
+  "content.tabs.link",
+  "toc.follow",
+]
+
+[project.theme.font]
+text = "Noto Sans SC"
+code = "JetBrains Mono"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+primary = "indigo"
+accent = "indigo"
+toggle = { icon = "lucide/moon", name = "切换到深色模式" }
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+primary = "indigo"
+accent = "indigo"
+toggle = { icon = "lucide/sun", name = "切换到浅色模式" }
+
+[project.markdown_extensions]
+admonition = {}
+attr_list = {}
+md_in_html = {}
+tables = {}
+toc = { permalink = true }
+"pymdownx.details" = {}
+"pymdownx.superfences" = {}
+"pymdownx.highlight" = { anchor_linenums = true, pygments_lang_class = true }
+"pymdownx.inlinehilite" = {}
+"pymdownx.tabbed" = { alternate_style = true }
+
+[project.extra.analytics]
+provider = "google"
+property = "G-8E3J72TZ88"
+
+[[project.extra.social]]
+icon = "fontawesome/brands/github"
+link = "https://github.com/Itsusinn/tuic"
+name = "TUIC 源码"
+
+[[project.extra.social]]
+icon = "lucide/book-open"
+link = "https://github.com/rust-proxy/tuic-docs"
+name = "文档仓库"
