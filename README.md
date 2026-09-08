@@ -89,14 +89,14 @@ BROWSER_CHANNEL=chromium node tests/config-generator/browser.mjs
 
 ## DSL 与维护约定
 
-[Config DSL v3](docs/tools/config-dsl.md) 使用独立的 `config-generator/schema/tuic.xml` 静态描述输入、默认值、枚举、条件、列表、映射及敏感字段，由 pest 解析，不使用 Rust 宏或闭包编写配置描述。Leptos 读取同一份元数据生成表单；通用投影与脱敏在 `dsl.rs`，跨字段 TUIC 校验在 `validation.rs`。新增普通字段时编辑 XML、说明及相关测试。
+[Config DSL v3](docs/tools/config-dsl.md) 使用独立的 `config-generator/schema/tuic.xml` 静态描述输入、默认值、枚举、条件、列表、映射及敏感字段，由 quick-xml + Serde 反序列化，不使用 Rust 宏或闭包编写配置描述。Leptos 读取同一份元数据生成表单；通用投影与脱敏在 `dsl.rs`，跨字段 TUIC 校验在 `validation.rs`。新增普通字段时编辑 XML、说明及相关测试。
 
 | 路径 | 内容 |
 | --- | --- |
 | `Cargo.toml` / `Cargo.lock` | 生成器 Rust workspace 与锁定依赖 |
 | `config-generator/` | 可独立构建的 Rust + Leptos 单页应用 |
 | `config-generator/schema/tuic.xml` | 静态 XML 配置描述，字段、初值、条件与输出的来源 |
-| `config-generator/src/dsl/xml.pest` / `dsl/parser.rs` | pest 语法与描述检查 |
+| `config-generator/src/dsl/xml.rs` / `dsl/wire.rs` / `dsl/parser.rs` | XML 子集检查、Serde 数据模型与语义校验 |
 | `config-generator/src/dsl.rs` | 数据投影、类型检查与脱敏 |
 | `config-generator/src/schema.rs` | 嵌入 XML、缓存解析结果与表单状态绑定 |
 | `config-generator/src/model.rs` | 配置生成入口及三种格式序列化 |

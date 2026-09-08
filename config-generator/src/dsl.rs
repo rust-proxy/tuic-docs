@@ -1,5 +1,7 @@
-//! Static XML configuration descriptions, parsed by pest. No callbacks or scripts.
+//! Static XML configuration descriptions, deserialized with Serde. No callbacks or scripts.
 mod parser;
+mod wire;
+mod xml;
 
 use std::{
 	collections::{BTreeMap, BTreeSet},

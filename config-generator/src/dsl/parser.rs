@@ -1,30 +1,8 @@
-use pest::{Parser, error::LineColLocation, iterators::Pair};
-
 use super::*;
 
-#[derive(pest_derive::Parser)]
-#[grammar = "dsl/xml.pest"]
-struct XmlParser;
-
 pub(super) fn parse(source: &str) -> Result<Document, DslError> {
-	if source.len() > 1_048_576 {
-		return Err(DslError("描述文件超过 1 MiB".into()));
-	}
-	if !source.chars().all(xml_char) {
-		return Err(DslError("描述包含无效 XML 字符".into()));
-	}
-	let mut pairs = XmlParser::parse(Rule::document, source).map_err(|e| {
-		let (line, column) = match e.line_col {
-			LineColLocation::Pos(p) | LineColLocation::Span(p, _) => p,
-		};
-		DslError(format!("{line}:{column} XML 语法错误"))
-	})?;
-	let document = pairs.next().ok_or_else(|| DslError("缺少文档".into()))?;
-	let root_pair = document
-		.into_inner()
-		.find(|p| p.as_rule() == Rule::element)
-		.ok_or_else(|| DslError("缺少根元素".into()))?;
-	let root = element(root_pair, 0)?;
+	let positions = xml::inspect(source)?;
+	let root = wire::deserialize(source, positions)?;
 	if root.tag != "config-dsl" {
 		return Err(root.error("根元素必须为 config-dsl"));
 	}
@@ -123,85 +101,6 @@ pub(super) fn parse(source: &str) -> Result<Document, DslError> {
 		}
 	}
 	Ok(doc)
-}
-fn element(pair: Pair<'_, Rule>, depth: usize) -> Result<Element, DslError> {
-	let (line, column) = pair.as_span().start_pos().line_col();
-	if depth > 64 {
-		return Err(DslError(format!("{line}:{column} 元素嵌套超过 64 层")));
-	}
-	let pair = if pair.as_rule() == Rule::element {
-		pair.into_inner().next().ok_or_else(|| DslError("缺少元素".into()))?
-	} else {
-		pair
-	};
-	let mut result = Element {
-		tag: String::new(),
-		attrs: BTreeMap::new(),
-		children: Vec::new(),
-		line,
-		column,
-	};
-	for part in pair.into_inner() {
-		match part.as_rule() {
-			Rule::name => {
-				if result.tag.is_empty() {
-					result.tag = part.as_str().into();
-				} else if result.tag != part.as_str() {
-					return Err(result.error("开始与结束标签不匹配"));
-				}
-			}
-			Rule::attribute => {
-				let mut parts = part.into_inner();
-				let name = parts.next().ok_or_else(|| result.error("缺少属性名"))?;
-				let quoted = parts.next().ok_or_else(|| result.error("缺少属性值"))?;
-				let text = quoted.as_str();
-				let value = decode(&result, &text[1..text.len() - 1])?;
-				if result.attrs.insert(name.as_str().into(), value).is_some() {
-					return Err(result.error("重复属性"));
-				}
-			}
-			Rule::element => result.children.push(element(part, depth + 1)?),
-			_ => {}
-		}
-	}
-	Ok(result)
-}
-fn xml_char(c: char) -> bool {
-	matches!(c as u32, 0x9 | 0xa | 0xd | 0x20..=0xd7ff | 0xe000..=0xfffd | 0x10000..=0x10ffff)
-}
-fn decode(node: &Element, text: &str) -> Result<String, DslError> {
-	let mut result = String::new();
-	let mut rest = text;
-	while let Some(i) = rest.find('&') {
-		result.push_str(&rest[..i]);
-		rest = &rest[i + 1..];
-		let end = rest.find(';').ok_or_else(|| node.error("实体缺少分号"))?;
-		let entity = &rest[..end];
-		let ch = match entity {
-			"amp" => Some('&'),
-			"lt" => Some('<'),
-			"gt" => Some('>'),
-			"quot" => Some('"'),
-			"apos" => Some('\''),
-			_ => {
-				let number = if let Some(hex) = entity.strip_prefix("#x") {
-					u32::from_str_radix(hex, 16).ok()
-				} else {
-					entity.strip_prefix('#').and_then(|n| n.parse::<u32>().ok())
-				};
-				number.and_then(char::from_u32)
-			}
-		}
-		.filter(|c| xml_char(*c))
-		.ok_or_else(|| node.error("不支持的实体或字符引用"))?;
-		result.push(ch);
-		rest = &rest[end + 1..];
-	}
-	result.push_str(rest);
-	if !result.chars().all(xml_char) {
-		return Err(node.error("无效 XML 字符"));
-	}
-	Ok(result)
 }
 fn attrs(node: &Element, allowed: &[&str]) -> Result<(), DslError> {
 	if node.attrs.keys().any(|k| !allowed.contains(&k.as_str())) {

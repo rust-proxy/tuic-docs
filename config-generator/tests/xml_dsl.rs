@@ -264,3 +264,106 @@ fn condition_types_and_document_limits() -> Result {
 	assert!(Document::parse(&" ".repeat(1_048_577)).is_err());
 	Ok(())
 }
+
+#[test]
+fn serde_preserves_attribute_whitespace_and_decodes_entities_once() -> Result {
+	let value = " \tline one\r\nline two\r &#9;&#10;&#13;&amp;#10;&amp;lt; ";
+	let xml = description(
+		&format!("<field name='text' type='string' default='{value}' label='文本'/>"),
+		"",
+		"<string name='text' from='/text'/>",
+	);
+	let doc = Document::parse(&xml)?;
+	assert_eq!(
+		doc.project(&doc.defaults())?["text"],
+		" \tline one\r\nline two\r \t\n\r&#10;&lt; "
+	);
+	Ok(())
+}
+
+#[test]
+fn serde_preserves_interleaved_children_and_empty_attributes() -> Result {
+	let xml = description(
+		"<field name='a' type='string' default='' label=''/><collection name='rows' initial-items='0'><field name='v' type='string' default='' label=''/></collection><field name='b' type='string' default='b' label='b'/>",
+		"<values><value name='pick'><coalesce><source from='/a'/><source from='/b'/><source from='/a'/></coalesce></value></values>",
+		"<object name='first'/><string name='picked' ref='pick'/><object name='last'/>",
+	);
+	let doc = Document::parse(&xml)?;
+	assert_eq!(
+		doc.fields.iter().map(|field| field.key.as_str()).collect::<Vec<_>>(),
+		["a", "b"]
+	);
+	let result = doc.project(&doc.defaults())?;
+	assert_eq!(result["picked"], "b");
+	assert_eq!(
+		result
+			.as_object()
+			.ok_or("object")?
+			.keys()
+			.map(String::as_str)
+			.collect::<Vec<_>>(),
+		["first", "picked", "last"]
+	);
+	Ok(())
+}
+
+#[test]
+fn xml_subset_is_checked_before_serde() {
+	let valid = description("", "", "");
+	for invalid in [format!("{valid}{valid}"), format!("\u{feff}{valid}")] {
+		assert!(Document::parse(&invalid).is_err());
+	}
+	for content in [
+		"<![CDATA[]]>",
+		"&#32;",
+		"<?processing instruction?>",
+		"<x:field/>",
+		"<field xmlns='urn:test'/>",
+		"<field xmlns:x='urn:test'/>",
+		"<field name='a'name='b'/>",
+		"<field name='a' type='string' default='x'label='a'/>",
+		"<field name='a' type='string' default='' label='a' xmlns='urn:test'/>",
+		"<field name='a' label='<raw'/>",
+		"<field name='a' label='&#xFFFE;'/>",
+		"<!-- bad --->",
+		"< field/>",
+		"<field name='a' label='&#+65;'/>",
+		"<field name='a' label='&#x+41;'/>",
+		"<field></ field>",
+		"<field></field extra>",
+	] {
+		assert!(
+			Document::parse(&description(content, "", "")).is_err(),
+			"accepted invalid XML subset"
+		);
+	}
+	assert!(Document::parse(&valid.replace("config-dsl", "object")).is_err());
+	let deep = format!("{}{}", "<object>".repeat(4000), "</object>".repeat(4000));
+	assert!(
+		Document::parse(&deep)
+			.err()
+			.is_some_and(|error| error.to_string().contains("64"))
+	);
+}
+
+#[test]
+fn maximum_xml_depth_remains_supported() -> Result {
+	let xml = description(
+		"",
+		"",
+		&format!(
+			"{}<string name='v' value='ok'/>{}",
+			"<object name='o'>".repeat(62),
+			"</object>".repeat(62)
+		),
+	);
+	Document::parse(&xml)?;
+	assert!(
+		Document::parse(&xml.replace(
+			"<string name='v' value='ok'/>",
+			"<object name='v'><string name='v' value='ok'/></object>"
+		))
+		.is_err()
+	);
+	Ok(())
+}

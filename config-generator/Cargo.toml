@@ -9,8 +9,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 toml = "0.9"
 uuid = "1"
-pest = "2.8"
-pest_derive = "2.8"
+# v3 preserves attribute whitespace; newer XML normalization changes that contract.
+quick-xml = { version = "0.38.4", features = ["serialize"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 leptos = { version = "0.8.20", features = ["csr"] }
