@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH ?? 'playwright');
-const base = process.env.PREVIEW_URL ?? 'http://127.0.0.1:8765/tuic/tools/config-generator/';
+const base = process.env.PREVIEW_URL ?? 'http://127.0.0.1:8765/tuic/config-generator/';
 const browser = await chromium.launch({ channel: process.env.BROWSER_CHANNEL ?? 'msedge', headless: true });
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, permissions: ['clipboard-read', 'clipboard-write'] });
 const page = await context.newPage();
@@ -28,7 +28,13 @@ async function jsonOutput(side) {
 try {
   await page.goto(base);
   await page.waitForSelector('#config-generator[data-ready="true"]');
+  assert.equal(await page.locator('.md-header, .md-main, iframe').count(), 0, 'Standalone application must not depend on Zensical');
+  assert.ok(requests.some(url => url.includes('.wasm')), 'Leptos WASM must be loaded');
   assert.equal(await page.getByRole('button', { name: '下载配置', exact: true }).isDisabled(), true);
+  await id('host').fill('tuic.example.com');
+  const hostControl = await id('host').elementHandle();
+  await id('host').pressSequentially('.test');
+  assert.equal(await hostControl.evaluate(node => node.isConnected && document.activeElement === node), true, 'Editing must retain the focused DOM node');
   await id('host').fill('tuic.example.com');
   assert.equal(await page.getByRole('button', { name: '下载配置', exact: true }).isEnabled(), true);
   await id('reveal').check();
@@ -78,8 +84,8 @@ try {
   await id('host').fill('[2001:db8::1]'); await id('hostname').fill('tuic.example.com');
   client = await jsonOutput('client');
   assert.equal(client.server, '[2001:db8::1]:443'); assert.equal(client.ip, '2001:db8::1');
-  await click('仅服务端'); assert.equal(await id('host').count(), 0);
-  await click('仅客户端'); await id('sni').fill('tuic.example.com'); assert.equal(await id('listen').count(), 0);
+  await click('仅服务端'); assert.equal(await id('host').isVisible(), false);
+  await click('仅客户端'); await id('sni').fill('tuic.example.com'); assert.equal(await id('listen').isVisible(), false);
   await click('配对生成');
   console.log('PASS: validation, IPv6 and independent modes');
 
@@ -109,13 +115,14 @@ try {
   await page.evaluate(() => window.scrollTo(0, 0));
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
   await page.screenshot({ path: resolve('.cache/config-generator-mobile.png'), fullPage: true });
-  await page.evaluate(() => document.body.setAttribute('data-md-color-scheme', 'slate'));
+  await page.getByRole('button', { name: '切换主题', exact: true }).click();
+  assert.equal(await page.locator('.cg-shell').getAttribute('data-theme'), 'dark');
   await page.screenshot({ path: resolve('.cache/config-generator-dark.png'), fullPage: true });
   const reference = await page.locator('a[href*="config-generator-reference"]').first().getAttribute('href');
-  const refResponse = await page.request.get(new URL(reference, base).href);
-  assert.equal(refResponse.status(), 200);
+  assert.equal(new URL(reference, base).href, 'https://docs.ihsin.dev/tuic/tools/config-generator-reference/');
   assert.equal(await page.evaluate(() => localStorage.length === 0 || !Object.keys(localStorage).some(k => /generator|password|uuid/.test(k))), true);
   assert.deepEqual(requests.filter(u => /google-analytics|googletagmanager|gtag/.test(u)), []);
+  assert.deepEqual(requests.filter(u => !u.startsWith(new URL(base).origin)), [], 'Generator must not fetch remote resources');
   assert.deepEqual(localFailures, []); assert.deepEqual(errors, []);
   await page.reload(); await page.waitForSelector('#config-generator[data-ready="true"]');
   assert.equal(await id('host').inputValue(), '');

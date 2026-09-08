@@ -1,116 +1,179 @@
 # 配置描述 DSL
 
-配置生成器使用 **Config DSL v1** 描述输入字段和输出配置。它是一套嵌入 JavaScript 的声明式语言，定义写在 ES module 中，由浏览器直接解释，不需要代码生成、前端打包或运行时第三方依赖。
+生成器使用 **Config DSL v3**：在 `config-generator/schema/tuic.xml` 中静态描述输入字段、默认值、选项、条件和输出结构，由 **pest** 解析。它是受限的 XML 变种，不包含 Rust 宏、闭包、JavaScript 或其他可执行代码。独立的 Rust + Leptos 页面读取解析结果生成表单，下载格式仍是 TOML、JSON 和 YAML。
 
-DSL 定义由维护者编写，最终下载的配置仍是 TOML、JSON 或 YAML。生成器没有执行、导入用户提供的 DSL 的入口。表单中的文本始终作为数据处理。
+v3 替代此前的 Rust 内嵌 DSL；原有表单初值和 TUIC 输出字段保持兼容，无需迁移已经生成的配置。
 
-## 示例
+## 文件结构
 
-下面的完整定义展示了表单默认值、条件校验、配置键映射和敏感字段。示例用于演示 DSL，不是 TUIC 配置。
+一个完整的最小描述如下。这是 DSL 示例，不是 TUIC 配置：
 
-```javascript
-import {
-  string, boolean, object, defaults, validateSchema, project, redact,
-} from '../assets/config-generator/dsl.mjs';
-
-const input = object({
-  name: string({ default: 'demo' }),
-  auth: boolean(),
-  password: string({
-    secret: true,
-    when: state => state.auth,
-    check: value => value.length ? '' : '请填写密码。',
-  }),
-});
-
-const output = object({
-  service_name: string({ from: 'name' }),
-  authentication: object({
-    password: string({ from: 'password', secret: true }),
-  }, { when: state => state.auth }),
-});
-
-const state = defaults(input);
-const errors = validateSchema(input, state); // {}
-const config = project(output, state);       // { service_name: 'demo' }
-const preview = redact(output, config);      // 独立的预览对象
+```xml
+<config-dsl version="3" target-version="example">
+  <inputs>
+    <field name="enabled" type="boolean" default="false"
+           section="addresses" label="开启认证"/>
+    <field name="password" type="string" default=""
+           section="addresses" label="密码" widget="password"
+           when="auth" rule="password"/>
+  </inputs>
+  <conditions>
+    <condition name="auth"><truthy from="/enabled"/></condition>
+  </conditions>
+  <outputs>
+    <boolean name="enabled" from="/enabled"/>
+    <object name="authentication" when="auth">
+      <string name="password" from="/password" secret="true"/>
+    </object>
+  </outputs>
+</config-dsl>
 ```
 
-开启 `auth` 后，输入密码才能通过校验；输出包含 `authentication.password`，预览中该值替换为 `••••••••`。真实导出使用 `config`，不使用隐藏密码后的对象。
+`inputs` 和 `outputs` 必须各有一个；`conditions` 和 `values` 是可选区块。`version` 固定为 `3`，`target-version` 是目标配置版本。TUIC 描述中的两个顶层输出对象分别命名为 `server` 和 `client`。
 
-## 类型与结构
+## 输入字段
 
-每个构造器返回一个可遍历的类型描述节点。`object` 的键是字面字段名，嵌套配置必须写成嵌套 `object`，点号不会自动展开成路径。
+每个 `field` 必须声明 `name`、`type`、`default`、`label`。默认值是静态属性值：
 
-| 写法 | 数据类型 | 未声明 `default` 时的表单初值 |
-| --- | --- | --- |
-| `string(options)` | 字符串，不自动裁剪或转换 | `''` |
-| `boolean(options)` | 严格布尔值 | `false` |
-| `integer(options)` | JavaScript 安全整数 | `0` |
-| `choice(choices, options)` | 指定的字符串枚举 | 第一个枚举值 |
-| `object(fields, options)` | 固定字段的对象 | 递归生成所有子字段初值 |
-| `list(item, options)` | 同一类型的列表 | `[]` |
-| `record(item, options)` | 动态字符串键到同一类型值的映射 | `{}` |
-
-`choice` 可写成 `['info', 'warn']`，也可写成 `[['bbr', 'BBR'], ['newreno', 'New Reno']]`，分别提供实际值和界面标签。枚举至少需要一个选项，值必须无重复，且全部为字符串。
-
-例如，TUIC 的 `users` 用 `record(string({ secret: true }), …)` 描述，端口转发用 `list(object({ … }), …)` 描述，`tls` 和 `backend` 用嵌套 `object` 描述。类型不依赖 TOML / JSON / YAML 中的具体写法。
-
-## 节点选项
-
-| 选项 | 含义 |
+| 类型 | 默认值与控件 |
 | --- | --- |
-| `default` | 表单初值；每次 `defaults` 都深拷贝显式初值，不共享用户列表等可变数据 |
-| `from: 'field'` | 从当前输入作用域读取一个自有字段；不解释点号路径 |
-| `from: (scope, root) => value` | 显式转换输入，如裁剪路径、生成带单位的持续时间、过滤转发列表 |
-| `value` | 输出常量，例如 `true` 或 `['h3']`；与 `from` 互斥 |
-| `when: (scope, root) => boolean` | 字段是否参与校验或输出；表单也读取该条件控制文本字段显示 |
-| `check: (value, scope, root) => message` | 类型通过后的约束；返回空字符串表示通过，非空字符串为错误信息 |
-| `secret: true` | 按输出结构递归隐藏该节点的值；不影响真实导出 |
-| `ui` | 表单元数据：`label`、`placeholder`、`hint`、`anchor`、可选 `type` 和 `numeric` |
+| `string` | 保留原始字符串，普通文本框 |
+| `boolean` | 仅接受 `true` 或 `false`，复选框 |
+| `integer` | 非负整数，数字输入；用于内部的用户索引 |
+| `enum` | 字符串，必须属于子元素 `option` 声明的选项 |
 
-未知选项、重复枚举、非法子节点和同时使用 `from` / `value` 会在定义时抛错。回调是受信任的 JavaScript 函数，应保持纯函数，不修改输入，不访问网络或浏览器存储，不把字段值写入错误信息。
+```xml
+<field name="controller" type="enum" default="bbr"
+       section="transport" label="服务端拥塞控制" when="server">
+  <option value="bbr" label="BBR"/>
+  <option value="cubic" label="CUBIC"/>
+</field>
+```
 
-`default` 只供初始化使用。校验和输出不会把缺失值或错误值替换成默认值，也不会把字符串 `'false'` 自动转换为布尔值。表单中的端口与持续时间暂存为字符串，以便展示空白和无效输入；通过校验后才在 `from` 中显式转换。
+`string` 可指定 `widget="text|password|number|email"`。端口、超时等可编辑数值使用 `type="string" widget="number"`，保留尚未通过校验的输入，便于展示错误；不会提前截断或静默改成零。
 
-## 作用域与求值
+可选属性：`placeholder`、`hint`、`section`、`when` 和 `rule`。现有页面分区是 `addresses`、`tls`、`local`、`transport`；`mode`、`format` 和 `internal` 供专用控件使用。`when` 引用一个命名条件，同时控制字段显示和单字段校验。隐藏字段仍保留在页面状态中。
 
-`project(output, state)` 从根输入 `state` 开始遍历：
+`rule` 选择有限的内置校验规则：`required`、`host`、`port`、`socket`、`email`、`socks-credential`、`milliseconds`、`uuid`、`password`、`endpoint`、`seconds`。规则的地址解析和字节数检查由 Rust 实现，XML 不能注册代码或调用任意函数。
 
-1. 在当前输入作用域执行 `when`。条件为假时直接省略整个节点，不执行它的 `from`、`check` 或子节点。
-2. 从 `value`、`from` 或当前作用域取得来源。未写 `from` 的对象块沿用作用域，不会按输出键自动切换到同名输入对象。
-3. 对象按字段定义构造输出；列表和映射中的每个元素成为其子节点的作用域；`root` 始终是原始根输入。
-4. 检查生成值的类型和 `check` 约束。错误通过 `ConfigDslError.errors` 返回字段路径，例如 `client.local.udp_forward.0.timeout`。
+### 用户与转发集合
 
-因此，普通输出标量通常写成 `string({ from: '字段名' })`；集合中的 `string()` 则直接使用当前元素。对象可用 `{ from: 'settings' }` 切换作用域，再由子字段读取其中的值。
+```xml
+<collection name="forwards" initial-items="0" when="client">
+  <field name="protocol" type="enum" default="tcp" label="转发协议">
+    <option value="tcp" label="TCP"/>
+    <option value="udp" label="UDP"/>
+  </field>
+  <field name="listen" type="string" default=""
+         label="本地监听地址" rule="socket"/>
+  <field name="remote" type="string" default=""
+         label="远端目标地址" rule="endpoint"/>
+  <field name="timeout" type="string" default="60"
+         label="会话超时（秒）" widget="number" rule="seconds" when="udp"/>
+</collection>
+```
 
-假值 `false`、数字 `0`、空字符串和空列表都是真实值，不代表省略。需要省略字段时必须明确声明 `when`。省略转发空列表、关闭认证后不输出用户名密码、切换证书模式后不输出旧字段，都由这些条件控制。
+集合声明行模板，`initial-items` 指定初始行数（0–1000）。新增转发行也读取相同的 XML 默认值。用户集合初始有一行空凭据，页面启动时通过浏览器 Crypto API 填充随机凭据。
 
-## 校验、预览与序列化
+行控件读取集合字段的标签、类型、选项和显示条件。每行另有页面内部使用的稳定 `id`，用于增删和焦点保持；它不会出现在导出的配置中。
 
-- `defaults(input)`：构造所有分支的初始表单状态，包括暂时隐藏的字段；不执行条件或映射。
-- `validateSchema(input, state)`：检查活动字段的类型和约束，返回以字段路径为键的错误对象。不会应用输出映射，也不会改写输入。
-- `validateSchema(input, state, { typesOnly: true })`：检查完整内部状态的类型，包括隐藏字段；不执行条件和业务约束，枚举仅检查字符串类型。生成器先执行这一层，避免关联规则处理畸形数据。
-- `project(output, state)`：在输入校验成功后，解释输出定义，生成纯数据对象。只生成声明的字段。
-- `redact(output, config)`：遍历已生成的配置并隐藏 `secret` 节点；不重新执行输入映射或条件，不修改原始配置。出现未声明的对象字段时拒绝生成预览。
-- `serialize(config, format)`：现有序列化器将纯数据对象转换为 TOML、JSON 或 YAML，并处理字符串转义。
+## 条件与数据来源
 
-`validateSchema` 检查已声明的输入字段，允许额外输入键，但 `project` 不会把它们自动传入配置。这套 DSL 描述生成器支持的配置子集，不是完整的 TUIC 配置解析器，不提供配置导入或任意语言的执行沙箱。
+条件是 XML 树，没有表达式字符串：
 
-## 生成器中的分工
+```xml
+<conditions>
+  <condition name="client"><not><eq from="/mode" value="server"/></not></condition>
+  <condition name="localAuth">
+    <all><use ref="client"/><truthy from="/localAuth"/></all>
+  </condition>
+  <condition name="udp"><eq from="protocol" value="udp"/></condition>
+</conditions>
+```
 
-| 文件 | 职责 |
+| 元素 | 含义 |
 | --- | --- |
-| `dsl.mjs` | 通用类型、初始化、字段校验、配置映射与密码隐藏 |
-| `schema.mjs` | `INPUT`、`USER`、`FORWARD` 输入定义，以及服务端和客户端 `OUTPUT` 定义 |
-| `addresses.mjs` | 域名、IP、端口与监听地址的公共解析函数 |
-| `validation.mjs` | 调用 DSL 校验，补充配对 SNI、重复 UUID、端口冲突、重连上下限等关联规则 |
-| `model.mjs` | 输入校验通过后调用 `project`，提供配置预览的隐藏密码入口 |
-| `app.mjs` | 表单布局、动态列表和交互；读取 DSL 的字段元数据、条件、枚举及初值 |
-| `serializers.mjs` | 输出格式及转义 |
+| `all` / `any` | 至少一个子条件，短路检查全部满足或任一满足 |
+| `not` | 恰好一个子条件，取反 |
+| `use ref="name"` | 引用命名条件 |
+| `eq from="…" value="…"` | 将标量表示与属性中的字面字符串比较 |
+| `truthy from="…"` | 只接受布尔值，字符串 `"true"` 不等同于布尔值 |
+| `ip from="…"` | 检查字符串是否为 IPv4 或 IPv6 地址 |
 
-表单分区、生成凭据、用户选择和 TLS 切换时关闭“跳过证书校验”等交互仍由应用层负责。跨字段的配对和安全规则保留为显式业务逻辑，便于与对应 TUIC 版本核对。
+后三种条件的 `from` 可替换为 `ref`，以读取命名值。`/host` 这样的绝对路径读取顶层输入；`protocol` 这样的相对路径读取当前行字段。输入是扁平字段和集合，不接受点号表达式、任意深层路径、通配符或代码。
 
-新增字段时，在 `INPUT` 中描述初值、活动条件、字段校验和界面元数据，在 `OUTPUT` 中声明真实配置键、类型及映射，再将控件放入相应表单分区。敏感字段应同时标注输入和输出的 `secret`，并补充对应控件类型。不要直接修改 `model.mjs` 拼装配置或在预览层另列密码字段。
+## 命名值与固定转换
 
-新增字段若改变配置含义，还应更新[生成器说明](config-generator-reference.md)，并运行 README 中的 DSL、模型、格式往返、真实解析器及浏览器测试。DSL 声明本身不证明远端服务可用。
+`values` 复用静态的数据来源描述：
+
+```xml
+<values>
+  <value name="host"><source from="/host" transform="trim unbracket"/></value>
+  <value name="serverHostname">
+    <coalesce>
+      <source from="/hostname" transform="trim"/>
+      <source ref="host" when="client"/>
+    </coalesce>
+  </value>
+</values>
+```
+
+命名值始终在顶层上下文中读取。`source` 必须指定一个 `from` 或 `ref`，可使用 `when`。支持以下有限的值元素：
+
+| 元素 | 行为 |
+| --- | --- |
+| `source` | 读取字段或命名值 |
+| `coalesce` | 依次取首个非空字符串、非空值；`false` 和 `0` 不会被跳过；全部为空时返回空字符串 |
+| `endpoint` | 恰好两个值元素：主机字符串和整数端口，自动为 IPv6 添加方括号 |
+| `select from="/users" index="/activeUser"` | 按非负整数索引选择一行，再读取唯一子值元素；越界时报错 |
+
+`transform` 是固定操作名序列，只支持 `trim`、`lowercase`、`unbracket`、`integer`。每个操作要求字符串来源；`integer` 将十进制数字串规范化为整数，例如 `"045"` → `45`，拒绝负号、小数、指数和溢出。它不是代码片段。
+
+字符串输出可指定 `unit="s"` 或 `unit="ms"`，为整数来源附加时间单位。密码默认原样保留，不自动裁剪空白。
+
+## 输出结构
+
+| 元素 | 输出 |
+| --- | --- |
+| `object` | 嵌套对象，每个子输出必须声明唯一的静态 `name` |
+| `string` / `boolean` / `integer` | 对应标量；整数输出限定为有符号 64 位范围 |
+| `enum options="controller"` | 字符串，并检查引用的顶层输入枚举选项 |
+| `list from="/forwards"` | 将每一行映射成唯一子输出元素；可用 `where-field` 与 `equals` 过滤 |
+| `list`（无 `from`） | 在当前上下文中生成一个元素，例如 ALPN 的 `h3` |
+| `record from="/users" key="uuid"` | 动态键映射；唯一子输出描述每个值，可声明 `key-transform` |
+
+标量必须且只能指定一个 `from`、`ref`、`value`，或一个子值元素。`value` 是常量，其类型由输出标签决定，不会将来源字符串隐式转换为布尔值。
+
+```xml
+<record name="users" from="/users" key="uuid" key-transform="trim lowercase">
+  <string from="password" secret="true"/>
+</record>
+<string name="password" secret="true">
+  <select from="/users" index="/activeUser"><source from="password"/></select>
+</string>
+<string name="reconnect_initial_backoff" from="/initialBackoff"
+        transform="integer" unit="ms" when="reconnect"/>
+```
+
+所有输出支持 `when` 与 `secret="true"`。条件不满足时省略整个节点，不读取其内容；`false`、`0`、空字符串和空集合默认保留。集合需声明 `omit-empty="true"` 才会省略空结果。动态映射键经转换后必须非空且唯一，重复键会报错，不会覆盖已有用户。
+
+`secret` 只影响预览脱敏：遍历已经生成的输出树，替换为 `••••••••`，不再次读取输入或计算条件。复制与下载始终使用原始配置。预览遇到未声明字段或类型不符会拒绝处理。
+
+## 解析、校验与错误
+
+`src/dsl/xml.pest` 定义语法，`src/dsl/parser.rs` 使用 pest 解析并检查标签、属性、类型、引用和依赖；`src/dsl.rs` 根据解析树生成对象及脱敏结果。`schema.rs` 通过 `include_str!` 嵌入 XML，并缓存一次解析结果。描述无效时页面显示错误，不生成配置。
+
+语法支持单/双引号属性、自闭合标签、配对标签、空白和注释。支持五种标准实体与十进制/十六进制字符引用。不支持 XML 声明、DTD、外部实体、命名空间、处理指令、CDATA 或混合文本；不会读取外部文件和网络。属性内容保留解码后的空白，不执行完整 XML 规范的属性空白规范化。文档大小上限为 1 MiB，解析树嵌套上限为 64 层。
+
+解析阶段拒绝未知标签/属性、重复名称、非法默认值、未声明引用、循环条件/值依赖及多重来源。投影阶段检查来源类型、索引、动态键和输出类型。错误包含描述位置或输出路径，不回显字段值。
+
+输入先经过 `validation::validate`：单字段规则与枚举来自 XML；重复 UUID、SNI 必须为域名、监听冲突、重连上下限、自签名必须明确允许跳过验证等跨字段 TUIC 规则留在 Rust。TLS 切换时关闭“跳过证书校验”属于页面交互规则。
+
+## 维护与扩展
+
+1. 在 `schema/tuic.xml` 增加字段、默认值、控件元数据和固定条件；已有分区的普通控件自动渲染。
+2. 在同一文件的 `outputs` 中声明实际配置键及敏感标记。新的顶层普通输入可通过页面状态的扩展字段映射保存，无需添加 Rust DSL 构造器。
+3. 新增 TUIC 业务关系、控件类型、集合类型或基础转换能力时，修改对应 Rust 实现并增加测试；不在 XML 中嵌入代码。
+4. 更新字段说明，运行 Rust 测试、格式化、Clippy、真实 TUIC 解析、三格式独立解析和浏览器检查，命令见仓库 README。
+
+DSL 最终生成 `serde_json::Value`，再交给 TOML、JSON 和 YAML 序列化器。字符串和动态键统一转义，JSON 额外转义 Unicode 行分隔符以兼容 TUIC 的 JSON5 读取器。本 DSL 描述生成器支持的配置子集，不提供旧配置导入；版本基线见[生成器说明](config-generator-reference.md)。

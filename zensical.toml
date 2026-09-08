@@ -10,7 +10,7 @@ edit_uri = "https://github.com/rust-proxy/tuic-docs/edit/main/docs/"
 nav = [
   { "首页" = "index.md" },
   { "工具" = [
-    { "配置生成器" = "tools/config-generator.md" },
+    { "配置生成器" = "/tuic/config-generator/" },
     { "生成器说明" = "tools/config-generator-reference.md" },
     { "配置描述 DSL" = "tools/config-dsl.md" },
   ] },

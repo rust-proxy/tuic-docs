@@ -10,6 +10,7 @@ use eyre::{Result, ensure};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 async fn server_config(path: PathBuf) -> Result<tuic_server::config::Config> {
+	let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
 	tuic_server::config::parse_config(
 		tuic_server::config::Cli {
 			config: Some(path),
@@ -19,12 +20,15 @@ async fn server_config(path: PathBuf) -> Result<tuic_server::config::Config> {
 		tuic_server::config::EnvState::default(),
 	)
 	.await
+	.map_err(|_| eyre::eyre!("Server parser rejected {name}; config contents suppressed"))
 }
 fn client_config(path: PathBuf) -> Result<tuic_client::Config> {
+	let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
 	tuic_client::Config::parse(
 		tuic_client::config::Cli { config: Some(path) },
 		tuic_client::config::EnvState::default(),
 	)
+	.map_err(|_| eyre::eyre!("Client parser rejected {name}; config contents suppressed"))
 }
 
 #[tokio::main]

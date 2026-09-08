@@ -1,3 +1,6 @@
 site/
 .venv/
 .cache/
+/target/
+/config-generator/dist/
+/config-generator/.tools/

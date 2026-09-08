@@ -22,5 +22,5 @@ class Handler(SimpleHTTPRequestHandler):
 
 port = int(sys.argv[1]) if len(sys.argv) > 1 else 8765
 server = ThreadingHTTPServer(('127.0.0.1', port), partial(Handler, directory=str(root / 'site')))
-print(f'Preview: http://127.0.0.1:{port}/tuic/tools/config-generator/', flush=True)
+print(f'Preview: http://127.0.0.1:{port}/tuic/config-generator/', flush=True)
 server.serve_forever()

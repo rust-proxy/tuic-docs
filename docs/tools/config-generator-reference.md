@@ -1,6 +1,6 @@
 # 配置生成器说明
 
-[打开配置生成器](config-generator.md){ .md-button .md-button--primary }
+[打开配置生成器](/tuic/config-generator/){ .md-button .md-button--primary }
 
 生成器面向 **Itsusinn/tuic 2.0.0-dev4**，以 TUIC [`4719113`](https://github.com/Itsusinn/tuic/tree/4719113dbc0a8dd54e3fd581199ad87c82748229) 与其 Wind 子模块 [`9025349`](https://github.com/rust-proxy/wind/tree/9025349201ba316015cea1b270e48824a04bcc21) 为核对基线。它生成现代分组配置，采用 Quinn 后端。
 
@@ -12,7 +12,7 @@
 4. 修正标记的字段，选择 TOML、JSON 或 YAML，复制或下载配置。配对模式需要分别保存服务端和客户端文件。
 5. 将证书放到配置指定的部署路径，开放 UDP 端口，再使用预览下方的命令启动对应程序。
 
-所有输入与序列化都在浏览器本地进行，不写入 URL 或浏览器存储。此页面不加载站点分析脚本。刷新或离开页面会丢失输入。预览默认隐藏密码，**复制与下载包含明文凭据**，应妥善保存。
+生成器是 Rust + Leptos 编写的独立单页应用，需要支持 JavaScript 和 WebAssembly 的现代浏览器。所有输入与序列化都在浏览器本地进行，不写入 URL 或浏览器存储。页面使用自身的样式和主题，不加载文档站框架或分析脚本。刷新或离开页面会丢失输入。预览默认隐藏密码，**复制与下载包含明文凭据**，应妥善保存。
 
 表单校验通过只表示字段符合生成器的约束，不代表 DNS、证书文件、防火墙或代理连接已经验证。
 

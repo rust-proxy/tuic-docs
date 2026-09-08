@@ -1,6 +1,7 @@
-"""Check built local links, fragments and generator privacy/template assets."""
+"""Check combined static links and the standalone generator's privacy/assets."""
 from html.parser import HTMLParser
 from pathlib import Path
+import re
 from urllib.parse import unquote, urlsplit
 
 root = Path(__file__).resolve().parents[2] / 'site'
@@ -47,10 +48,18 @@ for path, page in parsed.items():
         elif url.fragment and target in parsed and unquote(url.fragment) not in parsed[target].ids:
             errors.append(f'{path.name}: missing fragment {href}')
 
-generator = (root / 'tools/config-generator/index.html').read_text(encoding='utf-8')
+generator_path = root / 'config-generator/index.html'
+generator = generator_path.read_text(encoding='utf-8')
 for marker in ('googletagmanager', 'google-analytics', 'gtag('):
     assert marker not in generator, 'Generator must not include third-party analytics'
-for asset in ('app.mjs', 'styles.css'):
-    assert f'../../assets/config-generator/{asset}' in generator, 'Generator asset prefix changed'
+for marker in ('md-header', 'md-main', 'iframe', 'app.mjs'):
+    assert marker not in generator, 'Generator must be a standalone Leptos application'
+assets = re.findall(r'''(?:src|href)=["']([^"']+\.(?:js|wasm|css))["']''', generator)
+assert any(asset.endswith('.wasm') for asset in assets), 'WASM preload missing'
+for asset in assets:
+    url = urlsplit(asset)
+    assert not url.scheme and not url.netloc, 'Generator must use local assets'
+    target = root / url.path[len('/tuic/'):] if url.path.startswith('/tuic/') else generator_path.parent / url.path
+    assert target.is_file(), f'Missing generator asset: {asset}'
 assert not errors, '\n'.join(errors)
-print(f'All local links and fragments passed across {len(parsed)} pages; generator analytics disabled')
+print(f'All local links and fragments passed across {len(parsed)} pages; standalone WASM assets present and analytics absent')

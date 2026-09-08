@@ -1,0 +1,10 @@
+document = { SOI ~ gap* ~ element ~ gap* ~ EOI }
+gap = _{ space | comment }
+space = _{ " " | "\t" | "\r" | "\n" }
+comment = _{ "<!--" ~ (!"--" ~ ANY)* ~ "-->" }
+element = { empty | paired }
+empty = { "<" ~ name ~ (space+ ~ attribute)* ~ space* ~ "/>" }
+paired = { "<" ~ name ~ (space+ ~ attribute)* ~ space* ~ ">" ~ gap* ~ (element ~ gap*)* ~ "</" ~ name ~ space* ~ ">" }
+name = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_" | "-")* }
+attribute = { name ~ space* ~ "=" ~ space* ~ quoted }
+quoted = @{ "\"" ~ (!("\"" | "<") ~ ANY)* ~ "\"" | "'" ~ (!("'" | "<") ~ ANY)* ~ "'" }

@@ -28,9 +28,18 @@ jobs:
       with:
         enable-cache: true
 
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: wasm32-unknown-unknown
+
+    - run: cargo install trunk --version 0.21.14 --locked
+
+    - run: cargo test --workspace --locked
+
     - run: |
         uv sync --locked
-        uv run --locked zensical build --clean
+        uv run --locked python scripts/build-site.py
+        uv run --locked python tests/config-generator/check-site.py
         mv site tuic
         mkdir site
         mv tuic site/

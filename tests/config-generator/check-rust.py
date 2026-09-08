@@ -29,7 +29,8 @@ for name, patch in patches.items():
 (target / "main.rs").write_text(Path(__file__).with_name("config-check.rs").read_text(encoding="utf-8"), encoding="utf-8")
 # Seed with TUIC's lock so Git revisions and existing versions match the baseline.
 shutil.copyfile(tuic / 'Cargo.lock', target / 'Cargo.lock')
-subprocess.run(['node', 'tests/config-generator/fixtures.mjs'], cwd=root, check=True)
+subprocess.run(['cargo', 'run', '--locked', '--example', 'fixtures', '--',
+                str(root / '.cache' / 'config-generator-fixtures')], cwd=root, check=True)
 args = ['cargo', 'run', '--manifest-path', str(target / 'Cargo.toml')]
 if '--offline' in sys.argv:
     args += ['--offline']

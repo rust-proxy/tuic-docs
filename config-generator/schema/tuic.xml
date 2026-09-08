@@ -1,0 +1,147 @@
+<config-dsl version="3" target-version="2.0.0-dev4">
+	<inputs>
+		<field name="mode" type="enum" default="pair" section="mode" label="生成模式">
+			<option value="pair" label="配对生成" />
+			<option value="server" label="仅服务端" />
+			<option value="client" label="仅客户端" />
+		</field>
+		<field name="format" type="enum" default="toml" section="format" label="输出格式">
+			<option value="toml" label="TOML" />
+			<option value="json" label="JSON" />
+			<option value="yaml" label="YAML" />
+		</field>
+		<field name="host" type="string" default="" section="addresses" label="连接域名或 IP" placeholder="tuic.example.com" hint="客户端实际连接的主机，不含协议、路径或端口。" when="client" rule="host" />
+		<field name="port" type="string" default="8443" section="addresses" label="连接端口" placeholder="8443" hint="客户端连接的 UDP 端口；可与监听端口不同。" widget="number" when="client" rule="port" />
+		<field name="listen" type="string" default="[::]:8443" section="addresses" label="服务端监听地址" placeholder="[::]:8443" hint="必须是 IP:端口；IPv6 使用方括号。" when="server" rule="socket" />
+		<field name="tlsMode" type="enum" default="certificate" section="tls" label="服务端证书方式" when="server">
+			<option value="certificate" label="已有受信任证书" />
+			<option value="acme" label="ACME 自动证书" />
+			<option value="self" label="自签名测试" />
+		</field>
+		<field name="hostname" type="string" default="" section="tls" label="证书域名" placeholder="tuic.example.com" hint="留空时采用连接域名；单独生成服务端时必填。" when="server" />
+		<field name="certificate" type="string" default="/etc/tuic/fullchain.pem" section="tls" label="服务端证书路径" placeholder="/etc/tuic/fullchain.pem" hint="部署机器上的证书链文件路径。" when="certificate" rule="required" />
+		<field name="privateKey" type="string" default="/etc/tuic/privatekey.pem" section="tls" label="服务端私钥路径" placeholder="/etc/tuic/privatekey.pem" hint="只填写路径，不要粘贴私钥内容。" when="certificate" rule="required" />
+		<field name="email" type="string" default="" section="tls" label="ACME 联系邮箱" placeholder="admin@example.com" hint="用于证书申请。" widget="email" when="acme" rule="email" />
+		<field name="dataDir" type="string" default="/var/lib/tuic" section="tls" label="服务端数据目录" placeholder="/var/lib/tuic" hint="ACME 缓存目录需要可写，并在容器中持久化。" when="acme" rule="required" />
+		<field name="sni" type="string" default="" section="tls" label="客户端 SNI" placeholder="tuic.example.com" hint="留空时使用证书域名或连接域名；连接 IP 时需填写。" when="client" />
+		<field name="insecure" type="boolean" default="false" section="tls" label="跳过证书校验（仅测试）" hint="会失去服务端身份验证；默认关闭。" when="client" />
+		<field name="local" type="string" default="127.0.0.1:1080" section="local" label="本地 SOCKS5 监听地址" placeholder="127.0.0.1:1080" hint="默认只接受本机连接；对外监听时建议设置认证。" when="client" rule="socket" />
+		<field name="localAuth" type="boolean" default="false" section="local" label="启用 SOCKS5 用户名和密码" hint="监听非本机地址时建议设置认证。" when="client" />
+		<field name="localUsername" type="string" default="" section="local" label="SOCKS5 用户名" hint="与 TUIC 服务端认证相互独立。" when="localAuth" rule="socks-credential" />
+		<field name="localPassword" type="string" default="" section="local" label="SOCKS5 密码" hint="与用户名同时设置。" widget="password" when="localAuth" rule="socks-credential" />
+		<field name="logLevel" type="enum" default="info" section="transport" label="日志级别">
+			<option value="trace" label="trace" />
+			<option value="debug" label="debug" />
+			<option value="info" label="info" />
+			<option value="warn" label="warn" />
+			<option value="error" label="error" />
+			<option value="off" label="off" />
+		</field>
+		<field name="zeroRtt" type="boolean" default="false" section="transport" label="启用 0-RTT" hint="默认关闭；早期数据可能被重放。配对模式会同时设置两端。" />
+		<field name="controller" type="enum" default="bbr" section="transport" label="服务端拥塞控制" when="server">
+			<option value="bbr" label="BBR" />
+			<option value="bbr3" label="BBR3（当前与 BBR 共用实现）" />
+			<option value="cubic" label="CUBIC" />
+			<option value="newreno" label="New Reno" />
+		</field>
+		<field name="lazy" type="boolean" default="true" section="transport" label="按需连接" hint="默认开启，首次代理请求时才连接服务端。" when="client" />
+		<field name="reconnect" type="boolean" default="true" section="transport" label="断线自动重连" hint="默认开启，重试间隔按退避策略增加。" when="client" />
+		<field name="initialBackoff" type="string" default="500" section="transport" label="首次重连等待（毫秒）" placeholder="500" hint="首次重连前等待的时间。" widget="number" when="reconnect" rule="milliseconds" />
+		<field name="maxBackoff" type="string" default="30000" section="transport" label="最大重连等待（毫秒）" placeholder="30000" hint="应大于或等于首次等待时间。" widget="number" when="reconnect" rule="milliseconds" />
+		<field name="activeUser" type="integer" default="0" section="internal" label="客户端使用的用户" />
+		<collection name="users" initial-items="1">
+			<field name="uuid" type="string" default="" label="UUID" rule="uuid" />
+			<field name="password" type="string" default="" label="密码" widget="password" rule="password" />
+		</collection>
+		<collection name="forwards" initial-items="0" when="client">
+			<field name="protocol" type="enum" default="tcp" label="转发协议">
+				<option value="tcp" label="TCP" />
+				<option value="udp" label="UDP" />
+			</field>
+			<field name="listen" type="string" default="" label="本地监听地址" placeholder="127.0.0.1:8080" rule="socket" />
+			<field name="remote" type="string" default="" label="远端目标地址" placeholder="example.com:80" rule="endpoint" />
+			<field name="timeout" type="string" default="60" label="会话超时（秒）" widget="number" when="udp" rule="seconds" />
+		</collection>
+	</inputs>
+	<conditions>
+		<condition name="server"><not><eq from="/mode" value="client"/></not></condition>
+		<condition name="client"><not><eq from="/mode" value="server"/></not></condition>
+		<condition name="certificate"><all><use ref="server"/><eq from="/tlsMode" value="certificate"/></all></condition>
+		<condition name="acme"><all><use ref="server"/><eq from="/tlsMode" value="acme"/></all></condition>
+		<condition name="self"><eq from="/tlsMode" value="self"/></condition>
+		<condition name="localAuth"><all><use ref="client"/><truthy from="/localAuth"/></all></condition>
+		<condition name="reconnect"><all><use ref="client"/><truthy from="/reconnect"/></all></condition>
+		<condition name="zeroRtt"><truthy from="/zeroRtt"/></condition>
+		<condition name="udp"><eq from="protocol" value="udp"/></condition>
+		<condition name="ip"><ip ref="host"/></condition>
+	</conditions>
+	<values>
+		<value name="host"><source from="/host" transform="trim unbracket"/></value>
+		<value name="serverHostname"><coalesce><source from="/hostname" transform="trim"/><source ref="host" when="client"/></coalesce></value>
+		<value name="clientSni"><coalesce><source from="/sni" transform="trim"/><source from="/hostname" transform="trim" when="server"/><source ref="host"/></coalesce></value>
+	</values>
+	<!-- TUIC 4719113 / Wind 9025349: literal output names, no executable code. -->
+	<outputs>
+		<object name="server" when="server">
+			<string name="server" from="/listen" transform="trim"/>
+			<enum name="log_level" from="/logLevel" options="logLevel"/>
+			<boolean name="zero_rtt_handshake" value="true" when="zeroRtt"/>
+			<string name="data_dir" from="/dataDir" transform="trim" when="acme"/>
+			<record name="users" from="/users" key="uuid" key-transform="trim lowercase">
+				<string from="password" secret="true"/>
+			</record>
+			<object name="tls">
+				<string name="hostname" ref="serverHostname"/>
+				<list name="alpn"><string value="h3"/></list>
+				<string name="certificate" from="/certificate" transform="trim" when="certificate"/>
+				<string name="private_key" from="/privateKey" transform="trim" when="certificate"/>
+				<boolean name="auto_ssl" value="true" when="acme"/>
+				<string name="acme_email" from="/email" transform="trim" when="acme"/>
+				<boolean name="self_sign" value="true" when="self"/>
+			</object>
+			<object name="backend">
+				<string name="mode" value="quinn"/>
+				<object name="quinn"><object name="congestion_control">
+					<enum name="controller" from="/controller" options="controller"/>
+				</object></object>
+			</object>
+		</object>
+		<object name="client" when="client">
+			<string name="server"><endpoint><source ref="host"/><source from="/port" transform="integer"/></endpoint></string>
+			<!-- Explicit IP also avoids the baseline client's IPv6 DNS formatting issue. -->
+			<string name="ip" ref="host" when="ip"/>
+			<string name="uuid"><select from="/users" index="/activeUser"><source from="uuid" transform="trim lowercase"/></select></string>
+			<string name="password" secret="true"><select from="/users" index="/activeUser"><source from="password"/></select></string>
+			<enum name="log_level" from="/logLevel" options="logLevel"/>
+			<boolean name="zero_rtt_handshake" value="true" when="zeroRtt"/>
+			<boolean name="reconnect" from="/reconnect"/>
+			<boolean name="lazy" from="/lazy"/>
+			<string name="reconnect_initial_backoff" from="/initialBackoff" transform="integer" unit="ms" when="reconnect"/>
+			<string name="reconnect_max_backoff" from="/maxBackoff" transform="integer" unit="ms" when="reconnect"/>
+			<object name="tls">
+				<string name="sni" ref="clientSni"/>
+				<list name="alpn"><string value="h3"/></list>
+				<boolean name="skip_cert_verify" from="/insecure"/>
+			</object>
+			<object name="local">
+				<string name="server" from="/local" transform="trim"/>
+				<string name="username" from="/localUsername" when="localAuth"/>
+				<string name="password" from="/localPassword" when="localAuth" secret="true"/>
+				<list name="tcp_forward" from="/forwards" where-field="protocol" equals="tcp" omit-empty="true">
+					<object>
+						<string name="listen" from="listen" transform="trim"/>
+						<string name="remote" from="remote" transform="trim"/>
+						<string name="timeout" from="timeout" transform="integer" unit="s" when="udp"/>
+					</object>
+				</list>
+				<list name="udp_forward" from="/forwards" where-field="protocol" equals="udp" omit-empty="true">
+					<object>
+						<string name="listen" from="listen" transform="trim"/>
+						<string name="remote" from="remote" transform="trim"/>
+						<string name="timeout" from="timeout" transform="integer" unit="s" when="udp"/>
+					</object>
+				</list>
+			</object>
+		</object>
+	</outputs>
+</config-dsl>
