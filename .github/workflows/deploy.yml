@@ -1,5 +1,7 @@
-name: deploy
+name: CI and Pages
+
 on:
+  pull_request:
   push:
     branches:
       - main
@@ -7,52 +9,139 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  UV_PYTHON: '3.13'
 
 jobs:
+  check:
+    name: Rust and XML DSL checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo +nightly fmt --all --check
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check native Rust
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Check Leptos WASM code
+        run: cargo clippy --target wasm32-unknown-unknown --bin tuic-config-generator --locked -- -D warnings
+
+      - name: Test XML DSL and configuration generation
+        run: cargo test --workspace --locked
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Verify TOML, JSON and YAML round trips
+        run: |
+          uv sync --locked
+          cargo run --locked --example fixtures -- .cache/config-generator-fixtures
+          uv run --locked python tests/config-generator/roundtrip.py .cache/config-generator-fixtures/roundtrip.json
+
+  build:
+    name: Build and test standalone SPA
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: trunk-0.21.14
+
+      - name: Install Trunk
+        run: cargo install trunk --version 0.21.14 --locked
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Build documentation and standalone generator
+        run: |
+          uv sync --locked
+          uv run --locked python scripts/build-site.py
+          uv run --locked python tests/config-generator/check-site.py
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: tests/config-generator/package-lock.json
+
+      - name: Install browser test dependencies
+        run: npm ci --prefix tests/config-generator
+
+      - name: Install Chromium
+        working-directory: tests/config-generator
+        run: npx --no-install playwright install --with-deps chromium
+
+      - name: Test the built WASM application
+        env:
+          BROWSER_CHANNEL: chromium
+        run: |
+          uv run --locked python tests/config-generator/preview-server.py &
+          preview_pid=$!
+          trap 'kill "$preview_pid" 2>/dev/null || true' EXIT
+          curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 1 --retry-max-time 60 \
+            http://127.0.0.1:8765/tuic/config-generator/ > /dev/null
+          node tests/config-generator/browser.mjs
+
+      - name: Assemble Pages artifact
+        run: |
+          mkdir -p "$RUNNER_TEMP/pages/tuic"
+          cp -a site/. "$RUNNER_TEMP/pages/tuic/"
+          cp CNAME "$RUNNER_TEMP/pages/CNAME"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ runner.temp }}/pages
+
   deploy:
+    name: Deploy to GitHub Pages
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
     steps:
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
 
-    - uses: actions/checkout@v4
-
-    - uses: astral-sh/setup-uv@v5
-      with:
-        enable-cache: true
-
-    - uses: dtolnay/rust-toolchain@stable
-      with:
-        targets: wasm32-unknown-unknown
-
-    - run: cargo install trunk --version 0.21.14 --locked
-
-    - run: cargo test --workspace --locked
-
-    - run: |
-        uv sync --locked
-        uv run --locked python scripts/build-site.py
-        uv run --locked python tests/config-generator/check-site.py
-        mv site tuic
-        mkdir site
-        mv tuic site/
-        cp CNAME site/CNAME
-
-    - name: Setup Pages
-      uses: actions/configure-pages@v5
-
-    - name: Upload artifact
-      uses: actions/upload-pages-artifact@v3
-      with:
-        path: site
-
-    - name: Deploy to GitHub Pages
-      id: deployment
-      uses: actions/deploy-pages@v5
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

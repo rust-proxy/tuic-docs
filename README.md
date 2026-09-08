@@ -74,13 +74,18 @@ uv run --locked python tests/config-generator/check-rust.py --offline
 
 ### 浏览器检查
 
-需要 Node.js 和现有 Playwright 安装，默认使用 Edge。启动上面的组合预览后运行：
+需要 Node.js 20+。浏览器测试使用独立的 npm 清单和锁文件，不参与 Leptos 应用构建。启动上面的组合预览后运行（本地默认使用已安装的 Edge）：
 
 ```sh
+npm ci --prefix tests/config-generator
 node tests/config-generator/browser.mjs
+
+# 也可以使用 Playwright 自带的 Chromium，与 CI 一致
+npm exec --prefix tests/config-generator -- playwright install chromium
+BROWSER_CHANNEL=chromium node tests/config-generator/browser.mjs
 ```
 
-`PLAYWRIGHT_MODULE_PATH` 可指定已有 Playwright 模块目录，`BROWSER_CHANNEL` 可改为 Chrome。独立 Trunk 开发服务器使用 `PREVIEW_URL=http://127.0.0.1:8080/`。测试覆盖 WASM 加载、独立页面结构、配对一致性、用户删除、TLS 切换、输入校验、转发编辑、复制下载、转义、移动端、主题、无外部请求和输入不持久化，截图在 `.cache/`。
+`PLAYWRIGHT_MODULE_PATH` 可指定已有 Playwright 模块目录；`BROWSER_CHANNEL` 支持 `msedge`、`chrome` 和 `chromium`，CI 默认使用 `chromium`。独立 Trunk 开发服务器使用 `PREVIEW_URL=http://127.0.0.1:8080/`。测试覆盖 WASM 加载、独立页面结构、配对一致性、用户删除、TLS 切换、输入校验、转发编辑、复制下载、转义、移动端、主题、无外部请求和输入不持久化，截图在 `.cache/`。
 
 ## DSL 与维护约定
 
@@ -105,6 +110,12 @@ node tests/config-generator/browser.mjs
 
 ## 发布路径
 
-推送 `main` 或手动触发工作流后，GitHub Actions 构建两个应用，将文档放到 `/tuic/`，独立生成器放到 `/tuic/config-generator/`，并保留根目录 `CNAME`。Pages 来源应设为 GitHub Actions。
+[CI and Pages 工作流](.github/workflows/deploy.yml) 在 PR、推送 `main` 及手动触发时运行：
+
+- `check`：nightly rustfmt、stable 原生与 WASM Clippy、Rust/XML DSL 测试，以及 TOML/JSON/YAML 独立解析往返。Python 固定为 3.13，依赖使用 `uv.lock`。
+- `build`：使用 Trunk 0.21.14 构建文档和独立 SPA，检查站点链接及资源，再通过锁定版本的 Playwright/Chromium 运行生成器浏览器回归。Rust/Trunk、uv 和 npm 使用依赖缓存。
+- `deploy`：依赖 `check` 和 `build` 成功，仅在 `main` 的推送或手动运行时发布；Pages 写权限和 OIDC 权限仅授予此作业，PR 只验证和构建。
+
+发布产物在临时目录组装，文档位于 `/tuic/`，独立生成器位于 `/tuic/config-generator/`，根目录保留 `CNAME`。Pages 来源应设为 GitHub Actions。真实 TUIC 解析与回环测试仍按上文在具备相邻仓库的环境中运行。
 
 文档已从 MkDocs 迁移至 Zensical，不再使用 i18n 插件。旧 `/tuic/zh/` 路径不生成重定向，外部链接应更新到 `/tuic/` 下。站点构建和配置解析通过不代表远端 DNS、证书、防火墙或代理连接已经验证。
