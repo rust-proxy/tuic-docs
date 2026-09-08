@@ -6,11 +6,11 @@
     <meta name="description" content="在浏览器本地生成配置文件。">
     <meta name="referrer" content="no-referrer">
     <title>配置生成器</title>
-    <link data-trunk rel="css" href="styles.css">
-    <link data-trunk rel="rust" data-bin="config-generator" data-wasm-opt="s" data-wasm-opt-params="--enable-bulk-memory --enable-reference-types">
+    <script type="module" src="/ui/main.ts"></script>
   </head>
   <body>
     <p id="cg-loading" role="status">正在加载本地配置生成器，需要支持 WebAssembly 的现代浏览器。</p>
+    <div id="app"></div>
     <noscript>请启用 JavaScript 和 WebAssembly 以使用本地配置生成器。</noscript>
   </body>
 </html>

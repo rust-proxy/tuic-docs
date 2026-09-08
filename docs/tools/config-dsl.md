@@ -1,6 +1,6 @@
 # 配置描述 DSL
 
-生成器使用 **Config DSL v4**。`config-generator/schema/config.xml` 是 TUIC 产品定义的唯一运行时来源：品牌、版本、链接、字段、集合、默认值、校验、联动、提示、启动命令及输出结构均在 XML 中。Rust 只实现通用 XML 解释器、表单控件、随机字节编码和序列化，不认识服务端、客户端或 TUIC 配置字段。
+生成器使用 **Config DSL v4**。`config-generator/schema/config.xml` 是 TUIC 产品定义的唯一运行时来源：品牌、版本、链接、字段、集合、默认值、校验、联动、提示、启动命令及输出结构均在 XML 中。Rust 实现通用 XML 解释器、编辑状态、表单视图、随机字节编码和序列化；Svelte 渲染通用控件。两者都不认识服务端、客户端或 TUIC 配置字段。
 
 v4 替换 v3 描述格式，旧 XML 需要迁移；已生成的 TUIC 配置保持兼容。测试目录中的旧版类型和期望输出仅用于 TUIC 回归验证，不编译进应用。
 
@@ -10,11 +10,18 @@ v4 替换 v3 描述格式，旧 XML 需要迁移；已生成的 TUIC 配置保�
 
 ```powershell
 $env:CONFIG_SCHEMA = 'schema/example.xml'
-trunk --config config-generator/Trunk.toml build --release
-Remove-Item Env:CONFIG_SCHEMA
+try {
+    npm run build --prefix config-generator -- --outDir ../.cache/generic-site
+    uv run --locked python tests/config-generator/run-browser.py --directory .cache/generic-site --script tests/config-generator/browser-generic.mjs
+} finally {
+    Remove-Item Env:CONFIG_SCHEMA
+    npm run wasm --prefix config-generator
+}
 ```
 
-`schema/example.xml` 是不含 TUIC 字段的任务清单示例，具有不同的品牌、输入名、集合、三个输出和导出命令。相同 Rust/Leptos 代码直接呈现它，不需要增加分支或修改 HTML。环境变量变更和选中文件变更均会触发 Cargo 重新嵌入；这是构建时切换，网页不下载外部 XML、不读取网络配置。
+`schema/example.xml` 是不含 TUIC 字段的任务清单示例，具有不同的品牌、输入名、集合、三个输出和导出命令。相同 Rust/Svelte 代码直接呈现它，不需要增加分支或修改 HTML。环境变量变更和选中文件变更均会触发 Cargo 重新嵌入；这是构建时切换，网页不下载外部 XML、不读取网络配置。上面的 `--outDir` 相对 `config-generator/`，保留默认 `dist/` 和组合站点产物；最后重新生成默认 `pkg/`，避免后续 Vite 开发会话继续使用示例 WASM。
+
+Svelte 通过 WASM `Engine` 提交 `set`、`set-row`、`add`、`remove`、`generate` 和 `generate-row` 操作。Rust `Session` 统一处理状态和 XML 联动，再返回已计算可见性、错误及预览的显示快照。前端不接收条件表达式，也不解释 DSL。集合行以独立字符串标识作为 Svelte 的 keyed each 键，业务字段 `id` 不受影响；复制下载另行请求原始导出文本。此界面重构不改变 DSL v4 语法。
 
 ## 文档结构
 

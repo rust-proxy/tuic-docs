@@ -4,6 +4,12 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
@@ -13,11 +19,8 @@ uuid = "1"
 quick-xml = { version = "0.38.4", features = ["serialize"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-leptos = { version = "0.8.20", features = ["csr"] }
 wasm-bindgen = "0.2"
-wasm-bindgen-futures = "0.4"
-js-sys = "0.3"
-web-sys = { version = "0.3", features = ["Window", "Document", "HtmlElement", "HtmlAnchorElement", "HtmlDetailsElement", "Navigator", "Clipboard", "Crypto", "Blob", "BlobPropertyBag", "Url", "MediaQueryList"] }
+web-sys = { version = "0.3", features = ["Window", "Crypto"] }
 
 [dev-dependencies]
 uuid = { version = "1", features = ["v4"] }

@@ -152,7 +152,19 @@ fn malformed_state_is_not_coerced_or_exported() -> Result {
 #[test]
 fn production_code_contains_no_product_identifiers() {
 	for source in [
-		include_str!("../src/app.rs"),
+		include_str!("../src/session.rs"),
+		include_str!("../src/session/view.rs"),
+		include_str!("../src/wasm.rs"),
+		include_str!("../ui/App.svelte"),
+		include_str!("../ui/Field.svelte"),
+		include_str!("../ui/CollectionEditor.svelte"),
+		include_str!("../ui/FormSection.svelte"),
+		include_str!("../ui/OutputPanel.svelte"),
+		include_str!("../ui/Notices.svelte"),
+		include_str!("../ui/controller.svelte.ts"),
+		include_str!("../ui/types.ts"),
+		include_str!("../ui/main.ts"),
+		include_str!("../ui/browser.ts"),
 		include_str!("../src/schema.rs"),
 		include_str!("../src/validation.rs"),
 		include_str!("../src/model.rs"),

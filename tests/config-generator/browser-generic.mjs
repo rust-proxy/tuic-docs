@@ -44,11 +44,18 @@ try {
   assert.equal((await output()).items[0].secret.length, 24);
   await click('添加项目');
   await id('entries.1.id').fill('second');
+  const retainedRow = await id('entries.1.id').elementHandle();
   await id('chosen').selectOption('1');
   await click('单项清单');
   assert.equal((await output()).item, 'second');
   await click('移除项目 1');
   assert.equal((await output()).item, 'second');
+  assert.equal(await retainedRow.evaluate(node => node.isConnected && node.id === 'cg-entries.0.id'), true,
+    'Removing an earlier row retains the same DOM input and updates its error/label path');
+  await id('entries.0.id').focus();
+  await id('entries.0.id').pressSequentially('-edited');
+  assert.equal(await retainedRow.evaluate(node => document.activeElement === node), true);
+  await id('entries.0.id').fill('second');
   await click('单个项目');
   assert.equal(await page.getByRole('button', { name: '完整清单', exact: true }).isVisible(), false);
   await id('confirm').check();
@@ -70,6 +77,28 @@ try {
   assert.deepEqual(external, []);
   assert.deepEqual(errors, []);
   console.log('PASS: alternate XML branding, arbitrary fields/collections, generated values, resets, validation and three outputs');
+
+  const failurePage = await browser.newPage();
+  failurePage.on('pageerror', e => errors.push(e.message));
+  await failurePage.route('**/*', route => route.request().url().startsWith(new URL(base).origin) ? route.continue() : route.abort());
+  await failurePage.addInitScript(() => {
+    let calls = 0;
+    Object.defineProperty(Crypto.prototype, 'getRandomValues', { value(bytes) {
+      if (++calls > 1) throw new DOMException('Random unavailable');
+      return bytes.fill(0xab);
+    } });
+  });
+  await failurePage.goto(base);
+  await failurePage.waitForSelector('#config-generator[data-ready="true"]');
+  assert.equal(await failurePage.locator('#cg-seed').inputValue(), '', 'Failed initialization must not apply partial random values');
+  assert.match(await failurePage.locator('.cg-status').textContent(), /无法安全生成随机值/);
+  await failurePage.getByRole('button', { name: '添加项目', exact: true }).click();
+  assert.equal(await failurePage.locator('.cg-user').count(), 1, 'Failed randomness must not add a partial row');
+  await failurePage.locator('#cg-project').fill('manual');
+  assert.equal(await failurePage.locator('#cg-project').inputValue(), 'manual', 'Manual editing still works');
+  assert.deepEqual(errors, []);
+  await failurePage.close();
+  console.log('PASS: failed Crypto API calls preserve state and allow manual editing');
 } finally {
   await browser.close();
 }

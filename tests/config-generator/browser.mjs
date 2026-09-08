@@ -30,7 +30,7 @@ try {
   await page.goto(base);
   await page.waitForSelector('#config-generator[data-ready="true"]');
   assert.equal(await page.locator('.md-header, .md-main, iframe').count(), 0, 'Standalone application must not depend on Zensical');
-  assert.ok(requests.some(url => url.includes('.wasm')), 'Leptos WASM must be loaded');
+  assert.ok(requests.some(url => url.includes('.wasm')), 'Rust WASM engine must be loaded');
   assert.equal(await page.getByRole('button', { name: '下载配置', exact: true }).isDisabled(), true);
   await id('host').fill('tuic.example.com');
   const hostControl = await id('host').elementHandle();

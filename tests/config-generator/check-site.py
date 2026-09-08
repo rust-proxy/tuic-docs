@@ -53,9 +53,13 @@ generator = generator_path.read_text(encoding='utf-8')
 for marker in ('googletagmanager', 'google-analytics', 'gtag('):
     assert marker not in generator, 'Generator must not include third-party analytics'
 for marker in ('md-header', 'md-main', 'iframe', 'app.mjs'):
-    assert marker not in generator, 'Generator must be a standalone Leptos application'
+    assert marker not in generator, 'Generator must be a standalone Svelte/WASM application'
 assets = re.findall(r'''(?:src|href)=["']([^"']+\.(?:js|wasm|css))["']''', generator)
-assert any(asset.endswith('.wasm') for asset in assets), 'WASM preload missing'
+assert any(asset.endswith('.js') for asset in assets), 'Application entry missing'
+wasm_assets = list((root / 'config-generator/assets').glob('*.wasm'))
+assert wasm_assets, 'Rust WASM engine missing'
+bundles = list((root / 'config-generator/assets').glob('*.js'))
+assert any(wasm.name in bundle.read_text(encoding='utf-8') for wasm in wasm_assets for bundle in bundles), 'WASM engine is not referenced by the application'
 for asset in assets:
     url = urlsplit(asset)
     assert not url.scheme and not url.netloc, 'Generator must use local assets'

@@ -8,7 +8,7 @@ button, select, input:not([type="checkbox"]) { border: 1px solid var(--border); 
 button { font-weight: 550; line-height: 1.4; }
 button:hover { border-color: var(--accent); color: var(--accent); }
 button:disabled { opacity: .4; cursor: not-allowed; }
-button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, pre:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, .cg-code:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 a { color: var(--accent); text-underline-offset: 4px; }
 input[type="checkbox"] { width: 16px; height: 16px; min-height: 0; margin: 0; accent-color: var(--accent); vertical-align: middle; }
 [hidden] { display: none !important; }

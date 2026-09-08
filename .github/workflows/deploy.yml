@@ -43,8 +43,8 @@ jobs:
       - name: Check native Rust
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
-      - name: Check Leptos WASM code
-        run: cargo clippy --target wasm32-unknown-unknown --bin config-generator --locked -- -D warnings
+      - name: Check WASM bridge
+        run: cargo clippy --target wasm32-unknown-unknown --lib --locked -- -D warnings
 
       - name: Test XML DSL and configuration generation
         run: cargo test --workspace --locked
@@ -72,26 +72,28 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          key: trunk-0.21.14
-
-      - name: Install Trunk
-        run: cargo install trunk --version 0.21.14 --locked
+          key: svelte-wasm
 
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            config-generator/package-lock.json
+            tests/config-generator/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix config-generator
 
       - name: Build documentation and standalone generator
         run: |
           uv sync --locked
           uv run --locked python scripts/build-site.py
           uv run --locked python tests/config-generator/check-site.py
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: npm
-          cache-dependency-path: tests/config-generator/package-lock.json
 
       - name: Install browser test dependencies
         run: npm ci --prefix tests/config-generator
@@ -116,7 +118,7 @@ jobs:
           CONFIG_SCHEMA: schema/example.xml
           BROWSER_CHANNEL: chromium
         run: |
-          trunk --config config-generator/Trunk.toml build --release --dist "$PWD/.cache/generic-site"
+          npm run build --prefix config-generator -- --outDir "$PWD/.cache/generic-site"
           uv run --locked python tests/config-generator/run-browser.py --directory .cache/generic-site --script tests/config-generator/browser-generic.mjs
 
       - name: Assemble Pages artifact

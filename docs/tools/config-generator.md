@@ -7,7 +7,7 @@ hide:
 
 # 配置生成器 {#config-generator-title}
 
-配置生成器已迁移为独立单页应用，使用 Rust 和 Leptos 在浏览器本地运行。
+配置生成器已迁移为独立单页应用，使用 Rust WASM 和 Svelte 在浏览器本地运行。
 
 [打开独立配置生成器](/tuic/config-generator/){ .md-button .md-button--primary }
 
